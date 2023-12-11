@@ -1,0 +1,65 @@
+.app-title{
+  text-align: center;
+}
+.app-container{
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+}
+.link-generation-card{
+  background-color: white;
+  height: 300px;
+  border-radius: 5px;
+  padding: 20px;
+  box-shadow:  0 0 10px rgba(0,0,0,0.2);
+}
+.user-input{
+  display: block;
+  width: 250px;
+  margin-bottom: 10px;
+  font-size: 20px;
+  padding: 5px 10px;
+  margin-bottom: 20px;
+}
+.btn-generate-link{
+  display: block;
+  background-color: black;
+  color: #fff;
+  padding: 10px 60px;
+  border-radius: 50px;
+  border: none;
+  margin: 10px auto;
+  cursor: pointer;
+}
+.input-short-url{
+  width: 220px;
+  font-size: 20px;
+  padding: 5px 10px;
+ 
+}
+.short-url-container{
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+.copy-icon{
+  cursor: pointer;
+}
+.link-card{
+  background-color: #fff;
+  padding: 5px 10px;
+  margin: 10px;
+  
+  border-radius: 10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.2) ;
+}
+.all-links-container{
+  height: 80vh;
+  overflow-y: scroll;
+  -ms-overflow-style: none ;
+  scrollbar-width: 1px;
+
+}
+.all-links-container::-webkit-scrollbar{
+  display: none;
+}
