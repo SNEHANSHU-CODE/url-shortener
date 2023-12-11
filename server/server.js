@@ -4,7 +4,6 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 dotenv.config();
 const Link = require("./models/Link.js");
-const path = require("path");
 
 const cors = require("cors");
 //Cross-Origin Resource Sharing for client and server communication
@@ -76,13 +75,6 @@ app.get("/api/links", async (req,res)=>{
         message: "Links fetched successfully"
     })
 })
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
-  
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'))
-    });
-  }
   
 
 const PORT = 8080;
