@@ -1,5 +1,6 @@
-import { Schema,model } from "mongoose";
-const linkSchema = new Schema({
+const mongoose = require("mongoose");
+
+const linkSchema = new mongoose.Schema({
     url:{
         type:String,
         required: true,
@@ -19,7 +20,7 @@ const linkSchema = new Schema({
 },{
     timestamps:true,
 });
-const Link = model('Link',linkSchema);
+const Link = mongoose.model('Link',linkSchema);
 
 
-export default Link;
+module.exports = Link;

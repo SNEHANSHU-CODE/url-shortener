@@ -1,14 +1,16 @@
-import express from 'express';
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-dotenv.config();
-import Link from './models/Link.js';
-import path from 'path';
-
-
+const express = require("express");
 const app = express();
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+dotenv.config();
+const Link = require("./models/Link.js");
+const path = require("path");
+
+const cors = require("cors");
+//Cross-Origin Resource Sharing for client and server communication
+app.use(cors());
+
 app.use(express.json());
-const __dirname = path.resolve();
 
 const connectDB = async() =>{
     const conn = await mongoose.connect(process.env.MONGODB_URI);
