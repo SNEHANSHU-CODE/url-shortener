@@ -10,7 +10,7 @@ function App() {
   const [links, setLinks] = useState([]);
 
   const generateLink = async () => {
-    const response = await axios.post('/link', {
+    const response = await axios.post('https://url-server.onrender.com/link', {
       url,
       slug
     })
@@ -23,7 +23,7 @@ function App() {
     alert('copy to clipboard')
   }
   const loadLinks = async () => {
-    const response = await axios.get('/api/links');
+    const response = await axios.get('https://url-server.onrender.com/api/links');
     setLinks(response?.data?.data)
   }
   useEffect(() => {
