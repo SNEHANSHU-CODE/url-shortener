@@ -15,7 +15,7 @@ function App() {
       slug
     })
     setShortUrl(response?.data?.data.shortUrl)
-
+    loadLinks();
   }
   const copyShortUrl = () => {
 
