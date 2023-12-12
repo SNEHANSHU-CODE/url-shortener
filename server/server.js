@@ -5,10 +5,6 @@ const dotenv = require("dotenv");
 dotenv.config();
 const Link = require("./models/Link.js");
 
-const cors = require("cors");
-//Cross-Origin Resource Sharing for client and server communication
-app.use(cors());
-
 app.use(express.json());
 
 const connectDB = async() =>{
