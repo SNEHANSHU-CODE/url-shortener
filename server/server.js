@@ -30,7 +30,7 @@ app.post("/link", async (req,res)=>{
             data:{
                 url:savedLink.url,
                 slug: savedLink.slug,
-                shortUrl:`${"https://url-shortener-0f3m.onrender.com/"}/${savedLink.slug}`
+                shortUrl:`${"https://url-server.onrender.com"}/${savedLink.slug}`
             },
             message :"Links Saved Successfully"
         })
