@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 const Link = require("./models/Link.js");
 
+app.use(require("cors")());
 app.use(express.json());
 
 const connectDB = async() =>{
