@@ -50,7 +50,7 @@ function App() {
             <input type='text'
               placeholder='Short URL'
               className='input-short-url'
-              value={shortUrl}
+              value={`https://url-shortener-0f3m.onrender.com/${shortUrl}`}
               disabled />
             <img src={ImgCopy} alt='copy' className='copy-icon' onClick={copyShortUrl} />
           </div>
@@ -67,7 +67,7 @@ function App() {
           return (
           <div className='link-card' >
             <p>URL:{url}</p>
-            <p>Short URL: https://url-shortener-0f3m.onrender.com/{process.env.REACT_APP_BASE_URI}/{slug}</p>
+            <p>Short URL: {process.env.REACT_APP_BASE_URI}/{slug}</p>
             <p>Clicks:{clicks}</p>
 
           </div>
