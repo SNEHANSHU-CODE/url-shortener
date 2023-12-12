@@ -67,7 +67,7 @@ function App() {
           return (
           <div className='link-card' >
             <p>URL:{url}</p>
-            <p>Short URL: {process.env.REACT_APP_BASE_URI}/{slug}</p>
+            <p>Short URL: https://url-shortener-0f3m.onrender.com/{process.env.REACT_APP_BASE_URI}/{slug}</p>
             <p>Clicks:{clicks}</p>
 
           </div>
