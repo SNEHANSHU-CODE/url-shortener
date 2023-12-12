@@ -50,7 +50,7 @@ function App() {
             <input type='text'
               placeholder='Short URL'
               className='input-short-url'
-              value={`https://url-shortener-0f3m.onrender.com/${shortUrl}`}
+              value={shortUrl}
               disabled />
             <img src={ImgCopy} alt='copy' className='copy-icon' onClick={copyShortUrl} />
           </div>
