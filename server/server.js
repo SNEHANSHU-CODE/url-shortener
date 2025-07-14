@@ -72,6 +72,12 @@ app.get("/api/links", async (req,res)=>{
         message: "Links fetched successfully"
     })
 })
+
+
+//Keep my server alive
+app.get('/api/ping', (req, res) => {
+  res.send('pong');
+});
   
 
 const PORT = 8080;
