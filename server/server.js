@@ -16,6 +16,12 @@ const connectDB = async() =>{
 };
 connectDB();
 
+
+//Keep my server alive
+app.get('/api/ping', (req, res) => {
+  res.send('pong');
+});
+
 app.post("/link", async (req,res)=>{
     const {url,slug}= req.body;
     const randomSlug = Math.random().toString(36).substring(2,7);
@@ -73,11 +79,6 @@ app.get("/api/links", async (req,res)=>{
     })
 })
 
-
-//Keep my server alive
-app.get('/api/ping', (req, res) => {
-  res.send('pong');
-});
   
 
 const PORT = 8080;
