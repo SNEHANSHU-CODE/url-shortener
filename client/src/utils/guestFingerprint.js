@@ -165,9 +165,11 @@ export const getBrowserFingerprint = async () => {
   return fingerprint;
 };
 
-export default {
+const guestFingerprint = {
   getGuestIdentifier,
   storeGuestId,
   clearGuestId,
   getBrowserFingerprint,
 };
+
+export default guestFingerprint;

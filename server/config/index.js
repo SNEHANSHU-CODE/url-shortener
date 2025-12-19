@@ -31,6 +31,12 @@ const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000',
   
+  // CORS
+  corsOrigins: [
+    'http://localhost:3000',
+    'https://url-shortener-0f3m.onrender.com',
+  ],
+  
   // Rate Limiting
   rateLimit: {
     auth: { windowMs: 15 * 60 * 1000, max: 10 }, // 10 requests per 15 min

@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { FiLink, FiLoader, FiCopy, FiCheck, FiClock } from 'react-icons/fi';
 import { useAuth, useUrls } from '../../context';
 import { Alert } from '../common';
+import config from '../../config';
 
 const UrlForm = ({ onSuccess }) => {
   const { isAuthenticated } = useAuth();
@@ -163,7 +164,7 @@ const UrlForm = ({ onSuccess }) => {
                 <label className="form-label small text-muted">Custom Alias</label>
                 <div className="input-group input-group-sm">
                   <span className="input-group-text text-muted">
-                    {window.location.origin}/
+                    {config.baseUrl}/
                   </span>
                   <input
                     type="text"
