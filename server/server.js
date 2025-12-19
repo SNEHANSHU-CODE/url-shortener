@@ -6,6 +6,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
@@ -63,8 +64,25 @@ app.get('/api/ping', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/urls', urlRoutes);
 
-// Redirect routes (must be last to avoid conflicts)
+// Serve static files from React build
+const clientBuildPath = path.join(__dirname, '../client/build');
+app.use(express.static(clientBuildPath));
+
+// Redirect routes (handles short URL redirects)
 app.use('/', redirectRoutes);
+
+// Catch-all: serve React app for any unmatched routes (SPA support)
+app.get('*', (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  res.sendFile(path.join(clientBuildPath, 'index.html'), (err) => {
+    if (err) {
+      next(err);
+    }
+  });
+});
 
 // 404 handler
 app.use(notFoundHandler);
