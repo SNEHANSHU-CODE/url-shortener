@@ -36,7 +36,7 @@ app.use(cors({
   origin: config.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Id', 'X-Guest-Fingerprint'],
 }));
 
 // Body parsing
