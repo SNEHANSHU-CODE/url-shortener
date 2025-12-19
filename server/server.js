@@ -1,88 +1,110 @@
-const express = require("express");
+/**
+ * URL Shortener Server
+ * Main entry point
+ */
+
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
+const morgan = require('morgan');
+
+const config = require('./config');
+const connectDatabase = require('./config/database');
+const { authRoutes, urlRoutes, redirectRoutes } = require('./routes');
+const { errorHandler, notFoundHandler } = require('./middleware');
+const { startCleanupScheduler } = require('./services/cleanupService');
+
 const app = express();
-const mongoose = require("mongoose");
-const dotenv = require("dotenv");
-dotenv.config();
-const Link = require("./models/Link.js");
 
-app.use(require("cors")());
-app.use(express.json());
+// Trust proxy for rate limiting behind reverse proxy
+app.set('trust proxy', 1);
 
-const connectDB = async() =>{
-    const conn = await mongoose.connect(process.env.MONGODB_URI);
-    if (conn) {
-        console.log ('MongoDB connected');
-    }
-};
-connectDB();
+// Security middleware
+app.use(helmet());
 
+// Request logging
+if (config.nodeEnv !== 'test') {
+  app.use(morgan('dev'));
+}
 
-//Keep my server alive
+// CORS configuration
+app.use(cors({
+  origin: config.corsOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Id'],
+}));
+
+// Body parsing
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Cookie parsing
+app.use(cookieParser());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Server is healthy',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Legacy ping endpoint for backward compatibility
 app.get('/api/ping', (req, res) => {
   res.send('pong');
 });
 
-app.post("/link", async (req,res)=>{
-    const {url,slug}= req.body;
-    const randomSlug = Math.random().toString(36).substring(2,7);
-    const link =new Link({
-        url:url,
-        slug:slug || randomSlug,
-    })
-    try{
-        const savedLink = await link.save();
-       return res.json({
-            success:true,
-            data:{
-                url:savedLink.url,
-                slug: savedLink.slug,
-                shortUrl:`${"https://url-server.onrender.com"}/${savedLink.slug}`
-            },
-            message :"Links Saved Successfully"
-        })
-    }
-    catch(err){
-       return res.json({
-            success:false,
-            message:err.message
-        })
-    }
-})
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/urls', urlRoutes);
 
-// get
-app.get('/:slug', async(req,res)=>{
+// Redirect routes (must be last to avoid conflicts)
+app.use('/', redirectRoutes);
 
-    const {slug}= req.params;
-  
-    const link = await Link.findOne({slug:slug});
-  
-    if(!link){
-      return res.json({
-        success:false,
-        message:"link not found"
-  
-      })
-    }
-  
-    await  Link.updateOne({slug:slug},{$set:{
-      clicks : link.clicks + 1
-     }})
-  
-    res.redirect(link.url)
-  })
-app.get("/api/links", async (req,res)=>{
-    const links = await Link.find({});
-    return res.json({
-        success:true,
-        data:links,
-        message: "Links fetched successfully"
-    })
-})
+// 404 handler
+app.use(notFoundHandler);
 
-  
+// Global error handler
+app.use(errorHandler);
 
-const PORT = 8080;
+/**
+ * Start server
+ */
+const startServer = async () => {
+  try {
+    // Connect to database
+    await connectDatabase();
+    
+    // Start URL cleanup scheduler (cleans expired guest URLs every hour)
+    startCleanupScheduler();
+    
+    // Start listening
+    app.listen(config.port, () => {
+      console.log(`🚀 Server running on port ${config.port} in ${config.nodeEnv} mode`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
 
-app.listen(PORT, () =>{
-    console.log(`Server is running on port ${PORT}`);
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  process.exit(1);
 });
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
+startServer();
+
+module.exports = app;
