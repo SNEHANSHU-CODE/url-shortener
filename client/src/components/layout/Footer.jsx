@@ -20,7 +20,7 @@ const Footer = () => {
           </div>
           <div className="col-md-6 text-center text-md-end mt-2 mt-md-0">
             <a
-              href="https://github.com"
+              href="https://github.com/SNEHANSHU-CODE/url-shortener"
               target="_blank"
               rel="noopener noreferrer"
               className="text-light text-decoration-none"

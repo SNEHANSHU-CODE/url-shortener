@@ -74,10 +74,11 @@ class UrlService {
   
   /**
    * Get URL by short code (with caching)
+   * Checks cache first (Upstash Redis) then falls back to database
    */
   async getByShortCode(shortCode) {
     // Try cache first
-    let urlData = urlCache.get(shortCode);
+    let urlData = await urlCache.get(shortCode);
     
     if (!urlData) {
       // Cache miss - fetch from DB
@@ -98,8 +99,10 @@ class UrlService {
         id: url._id,
       };
       
-      // Cache for future requests
-      urlCache.set(shortCode, urlData);
+      // Cache for future requests (async, don't wait)
+      urlCache.set(shortCode, urlData).catch(err => {
+        console.error(`Failed to cache URL ${shortCode}:`, err.message);
+      });
     }
     
     return urlData;
@@ -189,8 +192,10 @@ class UrlService {
     
     await url.save();
     
-    // Invalidate cache
-    urlCache.invalidate(url.shortCode);
+    // Invalidate cache (async, don't wait)
+    urlCache.invalidate(url.shortCode).catch(err => {
+      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    });
     
     return this.formatUrlResponse(url);
   }
@@ -205,8 +210,10 @@ class UrlService {
       throw errors.notFound('URL not found or access denied');
     }
     
-    // Invalidate cache
-    urlCache.invalidate(url.shortCode);
+    // Invalidate cache (async, don't wait)
+    urlCache.invalidate(url.shortCode).catch(err => {
+      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    });
     
     return { message: 'URL deleted successfully' };
   }
@@ -221,8 +228,10 @@ class UrlService {
       throw errors.notFound('URL not found or access denied');
     }
     
-    // Invalidate cache
-    urlCache.invalidate(url.shortCode);
+    // Invalidate cache (async, don't wait)
+    urlCache.invalidate(url.shortCode).catch(err => {
+      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    });
     
     return { message: 'URL deleted successfully' };
   }

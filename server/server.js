@@ -11,17 +11,40 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
 const connectDatabase = require('./config/database');
 const { authRoutes, urlRoutes, redirectRoutes } = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middleware');
 const { startCleanupScheduler } = require('./services/cleanupService');
+const urlCache = require('./utils/cache');
 
 const app = express();
 
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
+
+// Rate limiter: 100 requests per hour
+const apiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again after an hour',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: 'Too many requests',
+      message: 'You have exceeded the rate limit of 100 requests per hour. Please try again later.',
+      retryAfter: req.rateLimit.resetTime,
+    });
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/ping';
+  },
+});
 
 // Security middleware
 app.use(helmet());
@@ -59,6 +82,9 @@ app.get('/health', (req, res) => {
 app.get('/api/ping', (req, res) => {
   res.send('pong');
 });
+
+// Apply rate limiter to all API routes
+app.use('/api/', apiLimiter);
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -102,9 +128,35 @@ const startServer = async () => {
     startCleanupScheduler();
     
     // Start listening
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
       console.log(`🚀 Server running on port ${config.port} in ${config.nodeEnv} mode`);
+      console.log(`📊 Cache status: ${urlCache.getStats().connected ? '✅ Connected to Upstash Redis' : '⚠️  Cache disabled'}`);
     });
+    
+    // Graceful shutdown handler
+    const gracefulShutdown = async (signal) => {
+      console.log(`\n${signal} received. Starting graceful shutdown...`);
+      
+      server.close(async () => {
+        console.log('Server closed');
+        
+        // Close Redis connection
+        await urlCache.destroy();
+        
+        console.log('Graceful shutdown complete');
+        process.exit(0);
+      });
+      
+      // Force shutdown after 10 seconds
+      setTimeout(() => {
+        console.error('Forced shutdown after 10 seconds');
+        process.exit(1);
+      }, 10000);
+    };
+    
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

@@ -1,121 +1,185 @@
 /**
- * URL Cache
- * Simple in-memory cache for hot URLs with TTL-based eviction
+ * URL Cache - Upstash Redis Integration
+ * Uses Upstash Redis for distributed caching with TTL-based eviction
+ * Provides fast URL redirects by checking cache before database
  */
 
+const { createClient } = require('redis');
 const config = require('../config');
 
 class UrlCache {
   constructor() {
-    this.cache = new Map();
-    this.maxSize = config.cache.maxSize;
-    this.ttl = config.cache.ttl;
-    
-    // Cleanup expired entries every 5 minutes
-    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    this.client = null;
+    this.connected = false;
+    this.ttl = config.cache.ttl / 1000; // Convert ms to seconds for Redis TTL
+    this.stats = {
+      hits: 0,
+      misses: 0,
+    };
+    this.initialize();
   }
-  
+
+  /**
+   * Initialize Redis connection
+   */
+  async initialize() {
+    try {
+      if (!process.env.REDIS_URL) {
+        console.warn('⚠️  REDIS_URL not configured, cache disabled. Add REDIS_URL to .env');
+        this.connected = false;
+        return;
+      }
+
+      this.client = createClient({
+        url: process.env.REDIS_URL,
+        socket: {
+          reconnectStrategy: (retries) => {
+            const delay = Math.min(retries * 50, 500);
+            return delay;
+          },
+          // For Upstash, ensure we're using the secure connection
+          tls: true,
+          keepAlive: 30000, // Keep alive interval in ms
+        },
+      });
+
+      // Handle connection events
+      this.client.on('error', (err) => {
+        console.error('❌ Redis connection error:', err.message);
+        this.connected = false;
+      });
+
+      this.client.on('connect', () => {
+        console.log('✅ Connected to Upstash Redis cache');
+        this.connected = true;
+      });
+
+      this.client.on('ready', () => {
+        console.log('✅ Upstash Redis cache is ready');
+        this.connected = true;
+      });
+
+      // Connect to Redis
+      await this.client.connect();
+      this.connected = true;
+    } catch (error) {
+      console.error('❌ Failed to initialize Redis cache:', error.message);
+      this.connected = false;
+    }
+  }
+
   /**
    * Get URL from cache
+   * Returns null if not found or cache unavailable
    */
-  get(shortCode) {
-    const entry = this.cache.get(shortCode);
-    
-    if (!entry) return null;
-    
-    // Check if expired
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(shortCode);
+  async get(shortCode) {
+    if (!this.connected || !this.client) {
+      this.stats.misses++;
       return null;
     }
-    
-    // Update hit count for LRU-like behavior
-    entry.hits += 1;
-    entry.lastAccess = Date.now();
-    
-    return entry.data;
-  }
-  
-  /**
-   * Set URL in cache
-   */
-  set(shortCode, urlData) {
-    // Evict if at max capacity
-    if (this.cache.size >= this.maxSize) {
-      this.evictLeastUsed();
-    }
-    
-    this.cache.set(shortCode, {
-      data: urlData,
-      expiresAt: Date.now() + this.ttl,
-      hits: 1,
-      lastAccess: Date.now(),
-    });
-  }
-  
-  /**
-   * Invalidate cache entry
-   */
-  invalidate(shortCode) {
-    this.cache.delete(shortCode);
-  }
-  
-  /**
-   * Evict least recently used entry
-   */
-  evictLeastUsed() {
-    let oldest = null;
-    let oldestKey = null;
-    
-    for (const [key, entry] of this.cache.entries()) {
-      if (!oldest || entry.lastAccess < oldest.lastAccess) {
-        oldest = entry;
-        oldestKey = key;
+
+    try {
+      const cached = await this.client.get(`url:${shortCode}`);
+
+      if (cached) {
+        this.stats.hits++;
+        return JSON.parse(cached);
       }
-    }
-    
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
+
+      this.stats.misses++;
+      return null;
+    } catch (error) {
+      console.error(`❌ Cache get error for ${shortCode}:`, error.message);
+      this.stats.misses++;
+      return null;
     }
   }
-  
+
   /**
-   * Cleanup expired entries
+   * Set URL in cache with TTL
+   * Upstash handles auto-eviction policy, so we don't set it manually
    */
-  cleanup() {
-    const now = Date.now();
-    
-    for (const [key, entry] of this.cache.entries()) {
-      if (now > entry.expiresAt) {
-        this.cache.delete(key);
-      }
+  async set(shortCode, urlData) {
+    if (!this.connected || !this.client) {
+      return;
+    }
+
+    try {
+      // Set with TTL in seconds (Upstash will auto-evict based on its policy)
+      // Default TTL from config, or 24 hours if not set
+      const ttl = this.ttl || 86400;
+      await this.client.setEx(
+        `url:${shortCode}`,
+        ttl,
+        JSON.stringify(urlData)
+      );
+    } catch (error) {
+      console.error(`❌ Cache set error for ${shortCode}:`, error.message);
     }
   }
-  
+
   /**
-   * Get cache stats
+   * Invalidate (delete) cache entry
+   */
+  async invalidate(shortCode) {
+    if (!this.connected || !this.client) {
+      return;
+    }
+
+    try {
+      await this.client.del(`url:${shortCode}`);
+    } catch (error) {
+      console.error(`❌ Cache invalidate error for ${shortCode}:`, error.message);
+    }
+  }
+
+  /**
+   * Get cache statistics
    */
   getStats() {
     return {
-      size: this.cache.size,
-      maxSize: this.maxSize,
+      hits: this.stats.hits,
+      misses: this.stats.misses,
+      hitRate: this.stats.hits + this.stats.misses > 0 
+        ? ((this.stats.hits / (this.stats.hits + this.stats.misses)) * 100).toFixed(2) + '%'
+        : '0%',
+      connected: this.connected,
       ttl: this.ttl,
     };
   }
-  
+
   /**
-   * Clear all cache
+   * Clear all cache (use with caution)
    */
-  clear() {
-    this.cache.clear();
+  async clear() {
+    if (!this.connected || !this.client) {
+      return;
+    }
+
+    try {
+      // Get all URL keys and delete them
+      const keys = await this.client.keys('url:*');
+      if (keys.length > 0) {
+        await this.client.del(keys);
+        console.log(`✅ Cleared ${keys.length} cache entries`);
+      }
+    } catch (error) {
+      console.error('❌ Cache clear error:', error.message);
+    }
   }
-  
+
   /**
    * Cleanup on shutdown
    */
-  destroy() {
-    clearInterval(this.cleanupInterval);
-    this.clear();
+  async destroy() {
+    if (this.client) {
+      try {
+        await this.client.quit();
+        console.log('✅ Upstash Redis connection closed');
+      } catch (error) {
+        console.error('❌ Error closing Redis connection:', error.message);
+      }
+    }
   }
 }
 
