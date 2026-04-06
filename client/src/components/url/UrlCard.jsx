@@ -16,7 +16,7 @@ import {
 import { useAuth, useUrls } from '../../context';
 import { ConfirmModal } from '../common';
 
-const UrlCard = ({ url, showActions = true }) => {
+const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () => {} }) => {
   const { isAuthenticated } = useAuth();
   const { deleteUrl } = useUrls();
   
