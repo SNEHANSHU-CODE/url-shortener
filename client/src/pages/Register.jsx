@@ -201,8 +201,7 @@ const Register = () => {
         otp,
       });
       
-      // Store tokens
-      localStorage.setItem('accessToken', response.data.data.accessToken);
+      // Token stored as httpOnly cookie by server
       // Clear guest ID since URLs are migrated
       localStorage.removeItem('guestId');
       
@@ -216,7 +215,7 @@ const Register = () => {
           });
           await navigator.credentials.store(cred);
         } catch (err) {
-          console.log('Credential storage not supported:', err);
+          // Credential storage not supported or failed
         }
       }
       
@@ -229,7 +228,8 @@ const Register = () => {
         );
       }
       
-      window.location.href = '/dashboard'; // Force reload to update auth state
+      // Navigate to dashboard
+      navigate('/dashboard');
     } catch (err) {
       setFormError(err.response?.data?.message || 'Invalid OTP');
     } finally {
@@ -263,20 +263,16 @@ const Register = () => {
         const response = await authService.googleLogin(tokenResponse.access_token);
         
         if (response.success) {
-          // Store tokens
-          localStorage.setItem('accessToken', response.data.accessToken);
+          // Token stored as httpOnly cookie by server
           
           // Navigate to dashboard
           navigate('/dashboard');
-          window.location.reload(); // Refresh to update auth state
         }
       } catch (err) {
-        console.error('Google login error:', err);
         setGoogleError(err.response?.data?.error?.message || 'Google login failed. Please try again.');
       }
     },
     onError: (error) => {
-      console.error('Google OAuth error:', error);
       setGoogleError('Google login failed. Please try again.');
     },
   });
@@ -553,7 +549,6 @@ const Register = () => {
                     <div className="invalid-feedback d-block">
                       Passwords do not match
                     </div>
-                  )}
                   )}
                 </div>
 

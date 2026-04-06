@@ -9,7 +9,7 @@ const { errors } = require('../utils/AppError');
 
 /**
  * Require authentication
- * Attaches user to req.user
+ * Attaches user to req.user and validates token integrity
  */
 const requireAuth = async (req, res, next) => {
   try {
@@ -20,9 +20,15 @@ const requireAuth = async (req, res, next) => {
     }
     
     const token = authHeader.split(' ')[1];
+    
+    // Validate token format
+    if (!token || typeof token !== 'string' || token.length === 0) {
+      throw errors.unauthorized('Invalid token format');
+    }
+    
     const decoded = verifyAccessToken(token);
     
-    if (!decoded) {
+    if (!decoded || !decoded.userId) {
       throw errors.unauthorized('Invalid or expired token');
     }
     

@@ -49,10 +49,27 @@ const generateUniqueShortCode = async (checkExists) => {
 /**
  * Validate custom slug format
  * Only allows alphanumeric characters, hyphens, and underscores
+ * Prevents MongoDB injection attacks
  */
 const isValidSlug = (slug) => {
+  if (!slug || typeof slug !== 'string') {
+    return false;
+  }
+  
+  // Strict regex - only alphanumeric, hyphens, underscores
   const slugRegex = /^[a-zA-Z0-9_-]+$/;
-  return slugRegex.test(slug) && slug.length >= 3 && slug.length <= 50;
+  
+  // Length check: minimum 3, maximum 50 characters
+  const isValidLength = slug.length >= 3 && slug.length <= 50;
+  
+  // Match regex pattern
+  const isValidPattern = slugRegex.test(slug);
+  
+  // Additional safety: reject if contains MongoDB operators or special chars
+  const mongoOperators = ['$', '{', '}'];
+  const containsOperator = mongoOperators.some(op => slug.includes(op));
+  
+  return isValidLength && isValidPattern && !containsOperator;
 };
 
 /**

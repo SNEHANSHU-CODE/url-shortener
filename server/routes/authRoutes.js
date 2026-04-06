@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { requireAuth, authLimiter } = require('../middleware');
+const { requireAuth, authLimiter, otpResendLimiter } = require('../middleware');
 
 // Apply rate limiting to auth routes
 router.use(authLimiter);
@@ -22,7 +22,7 @@ router.post('/reset-password', authController.resetPassword);
 // OTP routes
 router.post('/send-otp', authController.sendRegistrationOTP);
 router.post('/verify-otp', authController.verifyOTPAndRegister);
-router.post('/resend-otp', authController.resendOTP);
+router.post('/resend-otp', otpResendLimiter, authController.resendOTP);
 
 // Forgot Password OTP routes
 router.post('/forgot-password/send-otp', authController.sendForgotPasswordOTP);

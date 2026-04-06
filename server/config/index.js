@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const config = {
   // Server
-  port: process.env.PORT || 5000,
+  port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
   // Database
@@ -41,7 +41,7 @@ const config = {
   rateLimit: {
     auth: { windowMs: 15 * 60 * 1000, max: 10 }, // 10 requests per 15 min
     url: { windowMs: 60 * 1000, max: 30 },       // 30 requests per min
-    guest: { windowMs: 60 * 1000, max: 10 },     // 10 requests per min for guests
+    guest: { windowMs: 60 * 1000, max: 30 },     // 30 requests per min for guests (relaxed limit)
   },
   
   // URL Shortener
@@ -50,19 +50,25 @@ const config = {
     maxRetries: 5,
   },
   
-  // Cache
+  // Cache (Upstash Redis)
   cache: {
     maxSize: 1000,
-    ttl: 60 * 60 * 1000, // 1 hour
+    // No TTL - Upstash manages eviction automatically
   },
 
   // SMTP (Email)
   smtp: {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
     from: process.env.SMTP_FROM,
+  },
+
+  // Resend Email
+  resend: {
+    apiKey: process.env.RESEND_API_KEY,
+    from: process.env.RESEND_FROM || 'noreply@url-shortener.com',
   },
 };
 

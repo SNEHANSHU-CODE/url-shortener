@@ -11,6 +11,18 @@ const config = require('../config');
 const { AppError } = require('../utils/AppError');
 
 /**
+ * Set access token cookie
+ */
+const setAccessTokenCookie = (res, token) => {
+  res.cookie('accessToken', token, {
+    httpOnly: true,
+    secure: config.nodeEnv === 'production',
+    sameSite: 'strict',
+    maxAge: 15 * 60 * 1000, // 15 minutes
+  });
+};
+
+/**
  * Set refresh token cookie
  */
 const setRefreshTokenCookie = (res, token) => {
@@ -30,15 +42,43 @@ const register = async (req, res, next) => {
     const { email, password, name } = req.body;
     const guestId = req.headers['x-guest-id'];
     
-    const result = await authService.register({ email, password, name }, guestId);
+    // Validate inputs
+    if (!email || !password || !name) {
+      throw AppError.badRequest('Email, password, and name are required');
+    }
     
+    // Normalize and validate email
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
+    
+    // Validate password strength (min 8 chars, at least 1 uppercase, 1 number)
+    if (password.length < 8) {
+      throw AppError.badRequest('Password must be at least 8 characters');
+    }
+    if (!/[A-Z]/.test(password)) {
+      throw AppError.badRequest('Password must contain at least one uppercase letter');
+    }
+    if (!/[0-9]/.test(password)) {
+      throw AppError.badRequest('Password must contain at least one number');
+    }
+    
+    // Validate name (2-50 characters)
+    if (name.length < 2 || name.length > 50) {
+      throw AppError.badRequest('Name must be between 2 and 50 characters');
+    }
+    
+    const result = await authService.register({ email: normalizedEmail, password, name }, guestId);
+    
+    setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
     
     res.status(201).json({
       success: true,
       data: {
         user: result.user,
-        accessToken: result.accessToken,
         migratedUrls: result.migratedUrls,
       },
     });
@@ -55,15 +95,27 @@ const login = async (req, res, next) => {
     const { email, password } = req.body;
     const guestId = req.headers['x-guest-id'];
     
-    const result = await authService.login({ email, password }, guestId);
+    // Validate inputs
+    if (!email || !password) {
+      throw AppError.badRequest('Email and password are required');
+    }
     
+    // Validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
+    
+    const result = await authService.login({ email: normalizedEmail, password }, guestId);
+    
+    setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
     
     res.json({
       success: true,
       data: {
         user: result.user,
-        accessToken: result.accessToken,
         migratedUrls: result.migratedUrls,
       },
     });
@@ -86,13 +138,13 @@ const googleLogin = async (req, res, next) => {
     
     const result = await googleAuthService.authenticateWithGoogle(token, guestId);
     
+    setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
     
     res.json({
       success: true,
       data: {
         user: result.user,
-        accessToken: result.accessToken,
         isNewUser: result.isNewUser,
         migratedUrls: result.migratedUrls,
       },
@@ -115,13 +167,12 @@ const refreshToken = async (req, res, next) => {
     
     const result = await authService.refreshToken(token);
     
+    setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
     
     res.json({
       success: true,
-      data: {
-        accessToken: result.accessToken,
-      },
+      data: {},
     });
   } catch (error) {
     next(error);
@@ -130,15 +181,29 @@ const refreshToken = async (req, res, next) => {
 
 /**
  * Logout user
+ * Validates that the user making the request matches the token user
  */
 const logout = async (req, res, next) => {
   try {
     const token = req.cookies.refreshToken;
     
     if (token) {
-      await authService.logout(token);
+      // Verify token and extract userId
+      const { verifyRefreshToken } = require('../utils/jwt');
+      const decoded = verifyRefreshToken(token);
+      
+      // Validate that token user matches authenticated user
+      if (decoded && decoded.userId !== req.user._id.toString()) {
+        throw AppError.unauthorized('Token user does not match authenticated user');
+      }
+      
+      // Logout only if authenticated
+      if (decoded) {
+        await authService.logout(req.user._id);
+      }
     }
     
+    res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
     
     res.json({
@@ -173,7 +238,18 @@ const requestPasswordReset = async (req, res, next) => {
   try {
     const { email } = req.body;
     
-    await authService.requestPasswordReset(email);
+    if (!email) {
+      throw AppError.badRequest('Email is required');
+    }
+    
+    // Normalize and validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
+    
+    await authService.requestPasswordReset(normalizedEmail);
     
     // Always return success to prevent email enumeration
     res.json({
@@ -276,15 +352,38 @@ const sendRegistrationOTP = async (req, res, next) => {
     if (!email || !password || !name) {
       throw AppError.badRequest('Email, password, and name are required');
     }
+    
+    // Normalize and validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
+    
+    // Validate password strength
+    if (password.length < 8) {
+      throw AppError.badRequest('Password must be at least 8 characters');
+    }
+    if (!/[A-Z]/.test(password)) {
+      throw AppError.badRequest('Password must contain at least one uppercase letter');
+    }
+    if (!/[0-9]/.test(password)) {
+      throw AppError.badRequest('Password must contain at least one number');
+    }
+    
+    // Validate name
+    if (name.length < 2 || name.length > 50) {
+      throw AppError.badRequest('Name must be between 2 and 50 characters');
+    }
 
     // Check if email already exists
-    const existingUser = await authService.findUserByEmail(email);
+    const existingUser = await authService.findUserByEmail(normalizedEmail);
     if (existingUser) {
       throw AppError.conflict('Email already registered');
     }
 
     // Send OTP
-    await otpService.requestRegistrationOTP(email, { email, password, name });
+    await otpService.requestRegistrationOTP(normalizedEmail, { email: normalizedEmail, password, name });
 
     res.json({
       success: true,
@@ -317,13 +416,13 @@ const verifyOTPAndRegister = async (req, res, next) => {
     const { email: userEmail, password, name } = verification.userData;
     const result = await authService.register({ email: userEmail, password, name }, guestId);
 
+    setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
 
     res.status(201).json({
       success: true,
       data: {
         user: result.user,
-        accessToken: result.accessToken,
         migratedUrls: result.migratedUrls,
       },
     });
@@ -342,8 +441,15 @@ const resendOTP = async (req, res, next) => {
     if (!email) {
       throw AppError.badRequest('Email is required');
     }
+    
+    // Normalize and validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
 
-    await otpService.resendOTP(email);
+    await otpService.resendOTP(normalizedEmail);
 
     res.json({
       success: true,
@@ -364,9 +470,16 @@ const sendForgotPasswordOTP = async (req, res, next) => {
     if (!email) {
       throw AppError.badRequest('Email is required');
     }
+    
+    // Normalize and validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
 
     // Check if user exists
-    const existingUser = await authService.findUserByEmail(email);
+    const existingUser = await authService.findUserByEmail(normalizedEmail);
     if (!existingUser) {
       // Return success anyway to prevent email enumeration
       return res.json({
@@ -376,7 +489,7 @@ const sendForgotPasswordOTP = async (req, res, next) => {
     }
 
     // Send OTP for password reset
-    await otpService.requestPasswordResetOTP(email);
+    await otpService.requestPasswordResetOTP(normalizedEmail);
 
     res.json({
       success: true,
@@ -397,9 +510,16 @@ const verifyForgotPasswordOTP = async (req, res, next) => {
     if (!email || !otp) {
       throw AppError.badRequest('Email and OTP are required');
     }
+    
+    // Normalize and validate email format
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
 
     // Verify OTP (don't clear it yet, just validate)
-    const verification = otpService.verifyPasswordResetOTP(email, otp, false);
+    const verification = await otpService.verifyPasswordResetOTP(normalizedEmail, otp, false);
     if (!verification.valid) {
       throw AppError.badRequest(verification.error || 'Invalid or expired OTP');
     }
@@ -431,7 +551,7 @@ const resetPasswordWithOTP = async (req, res, next) => {
     }
 
     // Reset password
-    await authService.resetPasswordByEmail(email, newPassword);
+    await authService.resetPasswordByEmail(normalizedEmail, newPassword);
 
     res.json({
       success: true,

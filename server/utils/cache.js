@@ -1,17 +1,16 @@
 /**
  * URL Cache - Upstash Redis Integration
- * Uses Upstash Redis for distributed caching with TTL-based eviction
+ * Uses Upstash Redis for distributed caching with Upstash's eviction policy
  * Provides fast URL redirects by checking cache before database
+ * No TTL set - Upstash manages memory and eviction automatically
  */
 
 const { createClient } = require('redis');
-const config = require('../config');
 
 class UrlCache {
   constructor() {
     this.client = null;
     this.connected = false;
-    this.ttl = config.cache.ttl / 1000; // Convert ms to seconds for Redis TTL
     this.stats = {
       hits: 0,
       misses: 0,
@@ -96,8 +95,9 @@ class UrlCache {
   }
 
   /**
-   * Set URL in cache with TTL
-   * Upstash handles auto-eviction policy, so we don't set it manually
+   * Set URL in cache (no TTL)
+   * Upstash Redis manages memory via its eviction policy
+   * Entries remain until Upstash removes them based on available memory
    */
   async set(shortCode, urlData) {
     if (!this.connected || !this.client) {
@@ -105,12 +105,9 @@ class UrlCache {
     }
 
     try {
-      // Set with TTL in seconds (Upstash will auto-evict based on its policy)
-      // Default TTL from config, or 24 hours if not set
-      const ttl = this.ttl || 86400;
-      await this.client.setEx(
+      // Store without TTL - Upstash handles eviction based on its policy
+      await this.client.set(
         `url:${shortCode}`,
-        ttl,
         JSON.stringify(urlData)
       );
     } catch (error) {
@@ -144,7 +141,7 @@ class UrlCache {
         ? ((this.stats.hits / (this.stats.hits + this.stats.misses)) * 100).toFixed(2) + '%'
         : '0%',
       connected: this.connected,
-      ttl: this.ttl,
+      evictionPolicy: 'Upstash Managed',
     };
   }
 

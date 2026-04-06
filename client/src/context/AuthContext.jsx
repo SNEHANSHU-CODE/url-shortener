@@ -68,17 +68,10 @@ export const AuthProvider = ({ children }) => {
   // Check auth on mount
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
-        return;
-      }
-
       try {
         const response = await authService.getCurrentUser();
         dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
       } catch (error) {
-        localStorage.removeItem('accessToken');
         dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
       }
     };
@@ -91,7 +84,7 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
     try {
       const response = await authService.login(credentials);
-      localStorage.setItem('accessToken', response.data.accessToken);
+      // Access token is set as httpOnly cookie by server
       
       // Clear guest data after successful login (URLs already migrated server-side)
       clearGuestId();
@@ -129,7 +122,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       // Ignore logout errors
     }
-    localStorage.removeItem('accessToken');
+    // Cookies cleared by server
     // Don't clear guestId on logout - user may want to continue as guest
     dispatch({ type: AUTH_ACTIONS.LOGOUT });
   }, []);
@@ -159,13 +152,9 @@ export const AuthProvider = ({ children }) => {
       storeGuestId(guestId);
       dispatch({ type: AUTH_ACTIONS.SET_GUEST, payload: guestId });
       
-      if (isRecovered) {
-        console.log('🔄 Recovered guest session from fingerprint');
-      }
-      
       return guestId;
     } catch (error) {
-      console.error('Failed to init guest:', error);
+      dispatch({ type: AUTH_ACTIONS.SET_ERROR, payload: 'Failed to initialize guest session' });
       return null;
     }
   }, [state.guestId, state.isAuthenticated]);

@@ -19,6 +19,7 @@ const { authRoutes, urlRoutes, redirectRoutes } = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middleware');
 const { startCleanupScheduler } = require('./services/cleanupService');
 const urlCache = require('./utils/cache');
+const { hotloadUrlsToCache } = require('./utils/hotload');
 
 const app = express();
 
@@ -46,8 +47,33 @@ const apiLimiter = rateLimit({
   },
 });
 
-// Security middleware
-app.use(helmet());
+// Security middleware with strict headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+    },
+  },
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  noSniff: true,
+}));
+
+// HTTPS redirect for production
+if (config.nodeEnv === 'production') {
+  app.use((req, res, next) => {
+    // Check if request is not already HTTPS
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    if (protocol !== 'https') {
+      // Redirect to HTTPS
+      return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+    }
+    next();
+  });
+}
 
 // Request logging
 if (config.nodeEnv !== 'test') {
@@ -123,6 +149,13 @@ const startServer = async () => {
   try {
     // Connect to database
     await connectDatabase();
+    
+    // Hotload URLs from MongoDB to Redis cache on server startup
+    if (urlCache.connected) {
+      await hotloadUrlsToCache();
+    } else {
+      console.log('Skipping hotload: Redis cache not connected');
+    }
     
     // Start URL cleanup scheduler (cleans expired guest URLs every hour)
     startCleanupScheduler();

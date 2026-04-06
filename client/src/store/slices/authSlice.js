@@ -12,7 +12,7 @@ export const register = createAsyncThunk(
   async (data, { rejectWithValue }) => {
     try {
       const response = await authService.register(data);
-      localStorage.setItem('accessToken', response.data.accessToken);
+      // Access token is set as httpOnly cookie by server
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error?.message || 'Registration failed');
@@ -25,7 +25,7 @@ export const login = createAsyncThunk(
   async (data, { rejectWithValue }) => {
     try {
       const response = await authService.login(data);
-      localStorage.setItem('accessToken', response.data.accessToken);
+      // Access token is set as httpOnly cookie by server
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error?.message || 'Login failed');
@@ -38,7 +38,7 @@ export const googleLogin = createAsyncThunk(
   async (token, { rejectWithValue }) => {
     try {
       const response = await authService.googleLogin(token);
-      localStorage.setItem('accessToken', response.data.accessToken);
+      // Access token is set as httpOnly cookie by server
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error?.message || 'Google login failed');
@@ -51,10 +51,10 @@ export const logout = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       await authService.logout();
-      localStorage.removeItem('accessToken');
+      // Cookies cleared by server
       return null;
     } catch (error) {
-      localStorage.removeItem('accessToken');
+      // Clear auth state regardless of error
       return rejectWithValue(error.response?.data?.error?.message || 'Logout failed');
     }
   }
@@ -64,14 +64,9 @@ export const checkAuth = createAsyncThunk(
   'auth/checkAuth',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        return null;
-      }
       const response = await authService.getCurrentUser();
       return response.data.user;
     } catch (error) {
-      localStorage.removeItem('accessToken');
       return null;
     }
   }

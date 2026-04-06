@@ -36,7 +36,7 @@ const UrlCard = ({ url, showActions = true }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      // Clipboard copy failed - user can select manually if needed
     }
   };
 
@@ -55,14 +55,20 @@ const UrlCard = ({ url, showActions = true }) => {
         originalUrl: editData.originalUrl,
         expiresAt: editData.expiresAt || null,
       });
-      // Reload page to show updated data
-      window.location.reload();
+      // Update state instead of reload
+      setIsEditing(false);
+      setEditData({ originalUrl: '', expiresAt: '' });
+      // Show success message via context if available
+      if (onSuccess) {
+        onSuccess('URL updated successfully');
+      }
     } catch (err) {
-      console.error('Failed to update:', err);
-      alert(err.response?.data?.error?.message || 'Failed to update URL');
+      const errorMsg = err.response?.data?.error?.message || 'Failed to update URL';
+      if (onError) {
+        onError(errorMsg);
+      }
     } finally {
       setIsSaving(false);
-      setIsEditing(false);
     }
   };
 

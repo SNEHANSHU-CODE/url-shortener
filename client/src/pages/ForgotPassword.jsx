@@ -151,7 +151,7 @@ const ForgotPassword = () => {
           });
           await navigator.credentials.store(cred);
         } catch (err) {
-          console.log('Credential storage not supported:', err);
+          // Silently fail credential storage
         }
       }
       

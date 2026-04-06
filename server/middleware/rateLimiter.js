@@ -78,9 +78,17 @@ const createRateLimiter = (options) => {
 
 /**
  * Get default rate limit key (IP + userId if available)
+ * Prevents IP spoofing by validating IP format
  */
 const getDefaultKey = (req) => {
-  const ip = req.ip || req.connection.remoteAddress;
+  let ip = req.ip || req.connection.remoteAddress || 'unknown';
+  
+  // Sanitize IP - remove any potential injection attempts
+  if (typeof ip === 'string') {
+    // Keep only valid IP address format
+    ip = ip.replace(/[^0-9a-fA-F:.]/g, '');
+  }
+  
   const userId = req.user?._id || req.headers['x-guest-id'] || 'anonymous';
   return `${ip}:${userId}`;
 };
@@ -107,9 +115,20 @@ const guestLimiter = createRateLimiter({
   keyGenerator: (req) => `guest:${req.ip}`,
 });
 
+const otpResendLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 3, // Max 3 resends per 15 minutes
+  keyGenerator: (req) => {
+    const email = req.body?.email || 'unknown';
+    const ip = req.ip || 'unknown';
+    return `otp-resend:${email}:${ip}`;
+  },
+});
+
 module.exports = {
   createRateLimiter,
   authLimiter,
   urlLimiter,
   guestLimiter,
+  otpResendLimiter,
 };

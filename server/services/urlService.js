@@ -21,26 +21,31 @@ class UrlService {
    * @param {Date} params.expiresAt - Optional expiration date (for authenticated users)
    */
   async createUrl({ originalUrl, customSlug, userId, guestId, expiresAt }) {
-    // Validate URL format
-    if (!this.isValidUrl(originalUrl)) {
+    // Normalize and validate URL
+    const trimmedUrl = String(originalUrl).trim();
+    if (!this.isValidUrl(trimmedUrl)) {
       throw errors.badRequest('Invalid URL format');
+    }
+    if (trimmedUrl.length > 2048) {
+      throw errors.badRequest('URL exceeds maximum length of 2048 characters');
+    }
+    // Validate URL protocol and domain safety
+    const urlObj = new URL(trimmedUrl);
+    const allowedProtocols = ['http:', 'https:'];
+    if (!allowedProtocols.includes(urlObj.protocol)) {
+      throw errors.badRequest('Only HTTP and HTTPS protocols are allowed');
     }
     
     let shortCode;
     
     if (customSlug) {
-      // Validate custom slug
-      if (!isValidSlug(customSlug)) {
+      // Sanitize and validate custom slug
+      const sanitizedSlug = String(customSlug).trim();
+      if (!isValidSlug(sanitizedSlug)) {
         throw errors.badRequest('Invalid slug format. Use 3-50 alphanumeric characters, hyphens, or underscores');
       }
       
-      // Check if slug is taken
-      const existing = await Url.findOne({ shortCode: customSlug });
-      if (existing) {
-        throw errors.conflict('This custom slug is already taken');
-      }
-      
-      shortCode = customSlug;
+      shortCode = sanitizedSlug;
     } else {
       // Generate unique short code
       shortCode = await generateUniqueShortCode(async (code) => {
@@ -59,7 +64,7 @@ class UrlService {
     }
     
     const url = new Url({
-      originalUrl,
+      originalUrl: trimmedUrl,
       shortCode,
       customSlug: customSlug || null,
       userId: userId || null,
@@ -67,7 +72,15 @@ class UrlService {
       expiresAt: urlExpiration,
     });
     
-    await url.save();
+    try {
+      await url.save();
+    } catch (error) {
+      // Handle duplicate shortCode (E11000 error)
+      if (error.code === 11000 && error.keyPattern?.shortCode) {
+        throw errors.conflict('This custom slug is already taken');
+      }
+      throw error;
+    }
     
     return this.formatUrlResponse(url);
   }
@@ -97,6 +110,7 @@ class UrlService {
         originalUrl: url.originalUrl,
         shortCode: url.shortCode,
         id: url._id,
+        expiresAt: url.expiresAt || null,
       };
       
       // Cache for future requests (async, don't wait)
@@ -119,18 +133,30 @@ class UrlService {
   }
   
   /**
-   * Get user's URLs
+   * Get user's URLs with optional search
+   * Search by shortCode or originalUrl
    */
-  async getUserUrls(userId, { page = 1, limit = 10 } = {}) {
+  async getUserUrls(userId, { page = 1, limit = 10, search = '' } = {}) {
     const skip = (page - 1) * limit;
     
+    // Build search query
+    const query = { userId };
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      query.$or = [
+        { shortCode: { $regex: searchTerm, $options: 'i' } },
+        { originalUrl: { $regex: searchTerm, $options: 'i' } },
+        { customSlug: { $regex: searchTerm, $options: 'i' } },
+      ];
+    }
+    
     const [urls, total] = await Promise.all([
-      Url.find({ userId })
+      Url.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Url.countDocuments({ userId }),
+      Url.countDocuments(query),
     ]);
     
     return {
@@ -145,18 +171,29 @@ class UrlService {
   }
   
   /**
-   * Get guest's URLs
+   * Get guest's URLs with optional search
    */
-  async getGuestUrls(guestId, { page = 1, limit = 10 } = {}) {
+  async getGuestUrls(guestId, { page = 1, limit = 10, search = '' } = {}) {
     const skip = (page - 1) * limit;
     
+    // Build search query
+    const query = { guestId };
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      query.$or = [
+        { shortCode: { $regex: searchTerm, $options: 'i' } },
+        { originalUrl: { $regex: searchTerm, $options: 'i' } },
+        { customSlug: { $regex: searchTerm, $options: 'i' } },
+      ];
+    }
+    
     const [urls, total] = await Promise.all([
-      Url.find({ guestId })
+      Url.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Url.countDocuments({ guestId }),
+      Url.countDocuments(query),
     ]);
     
     return {
@@ -169,6 +206,7 @@ class UrlService {
    * Update URL by shortCode (authenticated users only)
    * Can update: originalUrl, isActive, expiresAt
    * Cannot update: shortCode (it's permanent once generated)
+   * Updates Redis cache immediately after database update
    */
   async updateUrl(shortCode, userId, updates) {
     const url = await Url.findOne({ shortCode, userId });
@@ -192,9 +230,15 @@ class UrlService {
     
     await url.save();
     
-    // Invalidate cache (async, don't wait)
-    urlCache.invalidate(url.shortCode).catch(err => {
-      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    // Update cache with new data (async, don't wait)
+    const cacheData = {
+      originalUrl: url.originalUrl,
+      shortCode: url.shortCode,
+      id: url._id,
+      expiresAt: url.expiresAt || null,
+    };
+    urlCache.set(url.shortCode, cacheData).catch(err => {
+      console.error(`Failed to update cache for ${url.shortCode}:`, err.message);
     });
     
     return this.formatUrlResponse(url);

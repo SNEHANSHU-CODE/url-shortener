@@ -94,10 +94,9 @@ export const UrlProvider = ({ children }) => {
     
     try {
       // Ensure guest session exists if not authenticated
-      const token = localStorage.getItem('accessToken');
       let guestId = localStorage.getItem('guestId');
       
-      if (!token && !guestId) {
+      if (!guestId) {
         // Initialize guest session first with fingerprint
         const fingerprint = await getBrowserFingerprint();
         const guestResponse = await authService.initGuest(fingerprint);
@@ -160,12 +159,16 @@ export const UrlProvider = ({ children }) => {
 
   const deleteUrl = useCallback(async (shortCode) => {
     try {
-      // Check if authenticated or guest
-      const token = localStorage.getItem('accessToken');
-      if (token) {
+      // API will use cookie-based auth automatically, fallback to guest endpoint if needed
+      try {
         await urlService.deleteUrl(shortCode);
-      } else {
-        await urlService.deleteGuestUrl(shortCode);
+      } catch (err) {
+        // If authenticated request fails with 401, try guest endpoint
+        if (err.response?.status === 401) {
+          await urlService.deleteGuestUrl(shortCode);
+        } else {
+          throw err;
+        }
       }
       dispatch({ type: URL_ACTIONS.DELETE_URL, payload: shortCode });
       return { success: true };

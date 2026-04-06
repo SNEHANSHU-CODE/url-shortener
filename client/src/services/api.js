@@ -17,11 +17,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    // Add access token if available
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // Tokens are sent automatically via cookies with withCredentials: true
     
     // Add guest ID if available
     const guestId = localStorage.getItem('guestId');
@@ -45,20 +41,17 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        const response = await axios.post(
+        // Access token will be refreshed in httpOnly cookie automatically
+        await axios.post(
           `${config.apiUrl}/auth/refresh`,
           {},
           { withCredentials: true }
         );
         
-        const { accessToken } = response.data.data;
-        localStorage.setItem('accessToken', accessToken);
-        
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        // Retry original request with refreshed token (sent automatically via cookie)
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed - clear auth state
-        localStorage.removeItem('accessToken');
+        // Refresh failed - dispatch logout event
         window.dispatchEvent(new CustomEvent('auth:logout'));
         return Promise.reject(refreshError);
       }

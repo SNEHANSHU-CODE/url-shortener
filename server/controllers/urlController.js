@@ -25,6 +25,14 @@ const createUrl = async (req, res, next) => {
       throw AppError.badRequest('User authentication or guest ID required');
     }
     
+    // Validate expiresAt if provided
+    if (userId && expiresAt) {
+      const expireDate = new Date(expiresAt);
+      if (expireDate <= new Date()) {
+        throw AppError.badRequest('Expiration date must be in the future');
+      }
+    }
+    
     const url = await urlService.createUrl({
       originalUrl,
       customSlug,
@@ -106,9 +114,23 @@ const getUserUrls = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
     
+    // Parse with radix 10 and validate positive integers
+    let pageNum = parseInt(page, 10);
+    let limitNum = parseInt(limit, 10);
+    
+    // Validate and set defaults/max
+    pageNum = isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
+    limitNum = isNaN(limitNum) || limitNum < 1 ? 10 : limitNum > 100 ? 100 : limitNum;
+    
+    // Add bounds check for page number to prevent DB scans
+    const maxPages = Math.ceil(10000 / limitNum);
+    if (pageNum > maxPages) {
+      pageNum = maxPages;
+    }
+    
     const result = await urlService.getUserUrls(req.user._id, {
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: pageNum,
+      limit: limitNum,
       search,
     });
     
@@ -130,12 +152,26 @@ const getUserUrls = async (req, res, next) => {
 const getGuestUrls = async (req, res, next) => {
   try {
     const guestId = req.headers['x-guest-id'];
+    const { page = 1, limit = 10, search } = req.query;
     
     if (!guestId) {
       throw AppError.badRequest('Guest ID is required');
     }
     
-    const result = await urlService.getGuestUrls(guestId);
+    // Parse with radix 10 and validate positive integers
+    let pageNum = parseInt(page, 10);
+    let limitNum = parseInt(limit, 10);
+    
+    pageNum = isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
+    limitNum = isNaN(limitNum) || limitNum < 1 ? 10 : limitNum > 100 ? 100 : limitNum;
+    
+    // Add bounds check for page number to prevent DB scans
+    const maxPages = Math.ceil(10000 / limitNum);
+    if (pageNum > maxPages) {
+      pageNum = maxPages;
+    }
+    
+    const result = await urlService.getGuestUrls(guestId, { page: pageNum, limit: limitNum, search });
     
     res.json({
       success: true,

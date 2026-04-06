@@ -73,7 +73,6 @@ const ConfirmModal = ({
       }
     },
     onError: (error) => {
-      console.error('Google OAuth error:', error);
       setInternalError('Google verification failed. Please try again.');
       setIsGoogleLoading(false);
     },
