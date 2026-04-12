@@ -82,44 +82,109 @@ class UrlService {
       throw error;
     }
     
+    // Important: Add newly created URL to cache immediately
+    // This avoids cache miss on first redirect to this URL
+    const cacheData = {
+      originalUrl: url.originalUrl,
+      shortCode: url.shortCode,
+      id: url._id,
+      expiresAt: url.expiresAt || null,
+    };
+    urlCache.set(url.shortCode, cacheData).catch(err => {
+      console.error(`Failed to cache newly created URL ${url.shortCode}:`, err.message);
+    });
+    
     return this.formatUrlResponse(url);
   }
   
   /**
-   * Get URL by short code (with caching)
-   * Checks cache first (Upstash Redis) then falls back to database
+   * Get URL by short code (with Redis-first strategy)
+   * 1. Try Redis first (with timeout)
+   * 2. If not in Redis or timeout, fall back to DB
+   * 3. If found in DB, add to Redis for future requests
+   * Returns object with _source field indicating 'Redis' or 'DB'
    */
   async getByShortCode(shortCode) {
-    // Try cache first
-    let urlData = await urlCache.get(shortCode);
-    
-    if (!urlData) {
-      // Cache miss - fetch from DB
-      const url = await Url.findByShortCode(shortCode);
+    try {
+      // Try to get from Redis first with reasonable timeout (200ms for network latency)
+      const cachedData = await this.getFromCacheWithTimeout(shortCode, 200);
       
-      if (!url) {
+      // If found in cache, return immediately
+      if (cachedData) {
+        // Validate expiration even for cached results
+        if (cachedData.expiresAt && new Date(cachedData.expiresAt) < new Date()) {
+          // Expired cached data - invalidate
+          await urlCache.invalidate(shortCode).catch(() => {});
+          throw errors.notFound('URL has expired');
+        }
+        // Add source info for logging
+        cachedData._source = 'Redis';
+        return cachedData;
+      }
+      
+      // Cache miss or timeout: query database
+      const dbUrl = await Url.findByShortCode(shortCode);
+      
+      if (!dbUrl) {
         throw errors.notFound('URL not found');
       }
       
       // Check expiration
-      if (url.expiresAt && url.expiresAt < new Date()) {
+      if (dbUrl.expiresAt && dbUrl.expiresAt < new Date()) {
         throw errors.notFound('URL has expired');
       }
       
-      urlData = {
-        originalUrl: url.originalUrl,
-        shortCode: url.shortCode,
-        id: url._id,
-        expiresAt: url.expiresAt || null,
+      const urlData = {
+        originalUrl: dbUrl.originalUrl,
+        shortCode: dbUrl.shortCode,
+        id: dbUrl._id,
+        expiresAt: dbUrl.expiresAt || null,
+        _source: 'DB',
       };
       
-      // Cache for future requests (async, don't wait)
+      // Important: Add to Redis for next time (don't wait)
+      // This ensures that URLs found in DB are cached for future requests
       urlCache.set(shortCode, urlData).catch(err => {
         console.error(`Failed to cache URL ${shortCode}:`, err.message);
       });
+      
+      return urlData;
+    } catch (error) {
+      // If it's an AppError (already handled), rethrow
+      if (error.statusCode) {
+        throw error;
+      }
+      // For unexpected errors, log and rethrow
+      console.error(`Error getting URL ${shortCode}:`, error.message);
+      throw error;
     }
-    
-    return urlData;
+  }
+  
+  /**
+   * Get from cache with timeout - returns null if timeout exceeded
+   * Default 200ms accounts for network latency on remote Redis (cloud hosted)
+   */
+  async getFromCacheWithTimeout(shortCode, timeoutMs = 200) {
+    return new Promise((resolve) => {
+      // Start the cache query
+      const cacheQuery = urlCache.get(shortCode);
+      
+      // Set timeout - resolve with null after timeoutMs
+      const timeoutId = setTimeout(() => {
+        resolve(null);
+      }, timeoutMs);
+      
+      // Resolve when cache responds
+      cacheQuery
+        .then(data => {
+          clearTimeout(timeoutId);
+          resolve(data);
+        })
+        .catch(() => {
+          clearTimeout(timeoutId);
+          resolve(null); // Treat cache errors as misses
+        });
+    });
   }
   
   /**
@@ -246,6 +311,7 @@ class UrlService {
   
   /**
    * Delete URL by shortCode (authenticated users only)
+   * Removes from both DB and Redis cache
    */
   async deleteUrl(shortCode, userId) {
     const url = await Url.findOneAndDelete({ shortCode, userId });
@@ -254,16 +320,19 @@ class UrlService {
       throw errors.notFound('URL not found or access denied');
     }
     
-    // Invalidate cache (async, don't wait)
-    urlCache.invalidate(url.shortCode).catch(err => {
-      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    // Remove from cache immediately (async, don't wait)
+    // This prevents serving stale URL data after deletion
+    await urlCache.invalidate(url.shortCode).catch(err => {
+      console.error(`⚠️  Failed to invalidate cache for ${url.shortCode}:`, err.message);
     });
     
+    console.log(`🗑️  Deleted and cache cleared: ${url.shortCode}`);
     return { message: 'URL deleted successfully' };
   }
   
   /**
    * Delete URL for guest
+   * Removes from both DB and Redis cache
    */
   async deleteGuestUrl(shortCode, guestId) {
     const url = await Url.findOneAndDelete({ shortCode, guestId });
@@ -272,11 +341,13 @@ class UrlService {
       throw errors.notFound('URL not found or access denied');
     }
     
-    // Invalidate cache (async, don't wait)
-    urlCache.invalidate(url.shortCode).catch(err => {
-      console.error(`Failed to invalidate cache for ${url.shortCode}:`, err.message);
+    // Remove from cache immediately (async, don't wait)
+    // This prevents serving stale URL data after deletion
+    await urlCache.invalidate(url.shortCode).catch(err => {
+      console.error(`⚠️  Failed to invalidate cache for ${url.shortCode}:`, err.message);
     });
     
+    console.log(`🗑️  Deleted and cache cleared: ${url.shortCode}`);
     return { message: 'URL deleted successfully' };
   }
   

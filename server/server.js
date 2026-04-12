@@ -12,6 +12,7 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 
 const config = require('./config');
 const connectDatabase = require('./config/database');
@@ -52,15 +53,48 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://accounts.google.com', 'https://*.googleapis.com'],
+      frameSrc: ["'self'", 'https://accounts.google.com'],
+      fontSrc: ["'self'", 'data:'],
+      frameAncestors: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
     },
   },
-  frameguard: { action: 'deny' },
+  frameguard: { action: 'sameorigin' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  xssFilter: true,
   noSniff: true,
+  dnsPrefetchControl: { allow: false },
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
+
+// Cache control middleware
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$/i)) {
+      // Static assets: 1 year cache with immutable flag
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (req.path.startsWith('/api/')) {
+      // API responses: no cache by default
+      res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+    } else {
+      // HTML pages: 1 hour
+      res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    }
+  } else {
+    // Non-GET requests: no cache
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  }
+  next();
+});
 
 // HTTPS redirect for production
 if (config.nodeEnv === 'production') {
@@ -75,9 +109,12 @@ if (config.nodeEnv === 'production') {
   });
 }
 
-// Request logging
+// Request logging with custom format for better readability
 if (config.nodeEnv !== 'test') {
-  app.use(morgan('dev'));
+  // Skip favicon and health check logging
+  app.use(morgan('dev', {
+    skip: (req) => req.path === '/favicon.ico' || req.path === '/health',
+  }));
 }
 
 // CORS configuration
@@ -88,9 +125,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Id', 'X-Guest-Fingerprint'],
 }));
 
-// Body parsing
+// Body parsing with compression
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(compression());
 
 // Cookie parsing
 app.use(cookieParser());
@@ -101,6 +139,21 @@ app.get('/health', (req, res) => {
     success: true,
     message: 'Server is healthy',
     timestamp: new Date().toISOString(),
+  });
+});
+
+// Cache status endpoint (debug only)
+app.get('/api/cache-status', (req, res) => {
+  const stats = urlCache.getStats();
+  res.json({
+    success: true,
+    data: {
+      ...stats,
+      message: stats.connected 
+        ? '✅ Redis.com cache is connected and working'
+        : '❌ Redis.com cache is not connected - check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env',
+      hitRate: stats.hitRate,
+    },
   });
 });
 
@@ -119,6 +172,24 @@ app.use('/api/urls', urlRoutes);
 // Serve static files from React build
 const clientBuildPath = path.join(__dirname, '../client/build');
 app.use(express.static(clientBuildPath));
+
+// Middleware: Prevent caching of short URL redirects
+// This must run before redirectRoutes to disable browser caching of 301 responses
+app.use((req, res, next) => {
+  // Check if this looks like a short code (short path, not starting with /api or known routes)
+  if (req.method === 'GET' && 
+      !req.path.startsWith('/api') && 
+      !req.path.startsWith('/health') &&
+      !req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$/i) &&
+      req.path !== '/' &&
+      req.path.length < 100) { // Short codes are typically < 10 chars
+    // Disable all caching for redirect responses
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
 
 // Redirect routes (handles short URL redirects)
 app.use('/', redirectRoutes);
@@ -150,11 +221,16 @@ const startServer = async () => {
     // Connect to database
     await connectDatabase();
     
+    // Wait for cache to initialize
+    console.log('⏳ Initializing cache...');
+    await urlCache.waitForInitialization();
+    
     // Hotload URLs from MongoDB to Redis cache on server startup
     if (urlCache.connected) {
+      console.log('🚀 Cache connected, starting hotload...');
       await hotloadUrlsToCache();
     } else {
-      console.log('Skipping hotload: Redis cache not connected');
+      console.log('⚠️  Skipping hotload: Redis cache not connected. Check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env');
     }
     
     // Start URL cleanup scheduler (cleans expired guest URLs every hour)
@@ -163,7 +239,7 @@ const startServer = async () => {
     // Start listening
     const server = app.listen(config.port, () => {
       console.log(`🚀 Server running on port ${config.port} in ${config.nodeEnv} mode`);
-      console.log(`📊 Cache status: ${urlCache.getStats().connected ? '✅ Connected to Upstash Redis' : '⚠️  Cache disabled'}`);
+      console.log(`📊 Cache status: ${urlCache.getStats().connected ? '✅ Connected to Redis.com' : '⚠️  Cache disabled'}`);
     });
     
     // Graceful shutdown handler

@@ -9,11 +9,10 @@ import { FcGoogle } from 'react-icons/fc';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context';
 import { Alert } from '../components/common';
-import { authService } from '../services';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, error, login, clearError, initGuest, guestId } = useAuth();
+  const { isAuthenticated, isLoading, error, login, googleLogin, clearError, initGuest, guestId } = useAuth();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -43,10 +42,6 @@ const Login = () => {
     // Clear field-specific error when user starts typing
     if (fieldErrors[name]) {
       setFieldErrors(prev => ({ ...prev, [name]: '' }));
-    }
-    
-    if (error) {
-      clearError();
     }
   };
 
@@ -98,6 +93,9 @@ const Login = () => {
       if (result.migratedUrls > 0) {
         setSuccessMessage(`Welcome back! ${result.migratedUrls} guest URL${result.migratedUrls > 1 ? 's' : ''} migrated to your account.`);
       }
+      
+      // Redirect to dashboard after successful login
+      setTimeout(() => navigate('/dashboard'), 100);
     }
   };
 
@@ -105,21 +103,29 @@ const Login = () => {
     onSuccess: async (tokenResponse) => {
       try {
         setGoogleError('');
-        // Send the access token to backend for verification
-        const response = await authService.googleLogin(tokenResponse.access_token);
+        console.log('Google token received, sending to backend...');
+        // Use context's googleLogin method which updates auth state
+        const result = await googleLogin(tokenResponse.access_token);
         
-        if (response.success) {
-          // Token stored as httpOnly cookie by server
-          
-          // Navigate to dashboard
+        console.log('Google login result:', result);
+        
+        if (result.success) {
+          // Auth context will handle state update
+          // Redirect to dashboard
           navigate('/dashboard');
+        } else {
+          // Error already set in context, will be displayed
+          setGoogleError(result.error);
         }
       } catch (err) {
-        setGoogleError(err.response?.data?.error?.message || 'Google login failed. Please try again.');
+        const errorMsg = err.response?.data?.error?.message || err.message || 'Google login failed. Please try again.';
+        console.error('Google login error:', err);
+        setGoogleError(errorMsg);
       }
     },
     onError: (error) => {
-      setGoogleError('Google login failed. Please try again.');
+      console.error('Google OAuth error:', error);
+      setGoogleError(error?.error || 'Google login failed. Please try again.');
     },
   });
 
@@ -217,6 +223,8 @@ const Login = () => {
                       onClick={() => setShowPassword(!showPassword)}
                       tabIndex={-1}
                       disabled={isLoading}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <FiEyeOff /> : <FiEye />}
                     </button>
@@ -232,6 +240,7 @@ const Login = () => {
                   type="submit"
                   className="btn btn-primary w-100 py-2"
                   disabled={isLoading}
+                  aria-label="Sign in to your account"
                 >
                   {isLoading ? (
                     <>
@@ -269,6 +278,7 @@ const Login = () => {
                   handleGoogleLogin();
                 }}
                 disabled={isLoading}
+                aria-label="Sign in with Google account"
               >
                 <FcGoogle className="me-2" size={20} />
                 Continue with Google
@@ -280,6 +290,7 @@ const Login = () => {
                 className="btn btn-outline-primary w-100 py-2 d-flex align-items-center justify-content-center"
                 onClick={handleGuestAccess}
                 disabled={isLoading}
+                aria-label="Continue as guest"
               >
                 <FiUser className="me-2" />
                 Try as Guest

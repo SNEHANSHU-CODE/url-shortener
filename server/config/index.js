@@ -50,25 +50,17 @@ const config = {
     maxRetries: 5,
   },
   
-  // Cache (Upstash Redis)
+  // Cache (Redis.com)
   cache: {
     maxSize: 1000,
-    // No TTL - Upstash manages eviction automatically
+    // No TTL - Redis manages eviction automatically
   },
 
-  // SMTP (Email)
-  smtp: {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from: process.env.SMTP_FROM,
-  },
-
-  // Resend Email
-  resend: {
-    apiKey: process.env.RESEND_API_KEY,
-    from: process.env.RESEND_FROM || 'noreply@url-shortener.com',
+  // EmailJS Configuration
+  emailjs: {
+    serviceId: process.env.EMAILJS_SERVICE_ID,
+    templateId: process.env.EMAILJS_TEMPLATE_ID_OTP,
+    publicKey: process.env.EMAILJS_PUBLIC_KEY,
   },
 };
 

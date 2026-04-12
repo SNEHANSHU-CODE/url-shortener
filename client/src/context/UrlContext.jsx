@@ -4,8 +4,7 @@
  */
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import { urlService, authService } from '../services';
-import { storeGuestId, getBrowserFingerprint } from '../utils/guestFingerprint';
+import { urlService } from '../services';
 
 const UrlContext = createContext(null);
 
@@ -93,22 +92,11 @@ export const UrlProvider = ({ children }) => {
     dispatch({ type: URL_ACTIONS.CLEAR_ERROR });
     
     try {
-      // Ensure guest session exists if not authenticated
-      let guestId = localStorage.getItem('guestId');
-      
-      if (!guestId) {
-        // Initialize guest session first with fingerprint
-        const fingerprint = await getBrowserFingerprint();
-        const guestResponse = await authService.initGuest(fingerprint);
-        guestId = guestResponse.data.guestId;
-        storeGuestId(guestId); // Use utility for proper storage
-      }
-      
       const response = await urlService.createUrl(data);
       dispatch({ type: URL_ACTIONS.ADD_URL, payload: response.data.url });
       return { success: true, url: response.data.url };
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Failed to create URL';
+      const message = error.response?.data?.error?.message || error.message || 'Failed to create URL. Please try again.';
       dispatch({ type: URL_ACTIONS.SET_ERROR, payload: message });
       return { success: false, error: message };
     }
@@ -122,12 +110,12 @@ export const UrlProvider = ({ children }) => {
       dispatch({
         type: URL_ACTIONS.SET_URLS,
         payload: {
-          urls: response.data.urls,
-          pagination: response.data.pagination,
+          urls: response.data?.urls || [],
+          pagination: response.data?.pagination || null,
         },
       });
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Failed to fetch URLs';
+      const message = error.response?.data?.error?.message || error.message || 'Failed to fetch URLs. Please try again.';
       dispatch({ type: URL_ACTIONS.SET_ERROR, payload: message });
     }
   }, []);
@@ -139,9 +127,13 @@ export const UrlProvider = ({ children }) => {
       const response = await urlService.getGuestUrls();
       dispatch({
         type: URL_ACTIONS.SET_URLS,
-        payload: { urls: response.data.urls },
+        payload: {
+          urls: response.data?.urls || [],
+          pagination: response.data?.pagination || null,
+        },
       });
     } catch (error) {
+      // Guest URLs might not exist, that's OK
       dispatch({ type: URL_ACTIONS.SET_LOADING, payload: false });
     }
   }, []);
@@ -149,22 +141,22 @@ export const UrlProvider = ({ children }) => {
   const updateUrl = useCallback(async (shortCode, data) => {
     try {
       const response = await urlService.updateUrl(shortCode, data);
-      dispatch({ type: URL_ACTIONS.UPDATE_URL, payload: response.data.url });
+      dispatch({ type: URL_ACTIONS.UPDATE_URL, payload: response.data?.url || response.data });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Failed to update URL';
+      const message = error.response?.data?.error?.message || error.message || 'Failed to update URL. Please try again.';
       return { success: false, error: message };
     }
   }, []);
 
   const deleteUrl = useCallback(async (shortCode) => {
     try {
-      // API will use cookie-based auth automatically, fallback to guest endpoint if needed
+      // Try authenticated endpoint first
       try {
         await urlService.deleteUrl(shortCode);
       } catch (err) {
-        // If authenticated request fails with 401, try guest endpoint
-        if (err.response?.status === 401) {
+        // If authenticated request fails (401 or 403), try guest endpoint
+        if (err.response?.status === 401 || err.response?.status === 403) {
           await urlService.deleteGuestUrl(shortCode);
         } else {
           throw err;
@@ -173,7 +165,7 @@ export const UrlProvider = ({ children }) => {
       dispatch({ type: URL_ACTIONS.DELETE_URL, payload: shortCode });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Failed to delete URL';
+      const message = error.response?.data?.error?.message || error.message || 'Failed to delete URL. Please try again.';
       return { success: false, error: message };
     }
   }, []);

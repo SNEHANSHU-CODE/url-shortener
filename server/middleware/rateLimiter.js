@@ -27,6 +27,11 @@ const createRateLimiter = (options) => {
   const { windowMs, max, keyGenerator, skipSuccessfulRequests = false } = options;
   
   return (req, res, next) => {
+    // Skip rate limiting in development mode
+    if (process.env.NODE_ENV === 'development') {
+      return next();
+    }
+    
     const key = keyGenerator ? keyGenerator(req) : getDefaultKey(req);
     const now = Date.now();
     

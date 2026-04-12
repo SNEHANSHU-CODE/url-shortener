@@ -4,6 +4,7 @@
  */
 
 const urlService = require('../services/urlService');
+const config = require('../config');
 const { AppError } = require('../utils/AppError');
 
 /**
@@ -54,30 +55,50 @@ const createUrl = async (req, res, next) => {
 
 /**
  * Get URL by short code (for redirect)
+ * Redirects to original URL or to client 404 page if not found
  */
 const redirectUrl = async (req, res, next) => {
   try {
     const { shortCode } = req.params;
     
-    const url = await urlService.getByShortCode(shortCode);
-    
-    if (!url) {
-      throw AppError.notFound('Short URL not found');
+    try {
+      const url = await urlService.getByShortCode(shortCode);
+      
+      if (!url) {
+        // Short URL not found - redirect to client 404 page using CLIENT_URL from env
+        console.log(`❌ Not found: ${shortCode} -> Redirecting to ${config.clientUrl}/notfound`);
+        return res.redirect(302, `${config.clientUrl}/notfound`);
+      }
+      
+      // Check if expired
+      if (url.expiresAt && new Date() > url.expiresAt) {
+        // Short URL expired - redirect to client 404 page using CLIENT_URL from env
+        console.log(`⏰ Expired: ${shortCode} -> Redirecting to ${config.clientUrl}/notfound`);
+        return res.redirect(302, `${config.clientUrl}/notfound`);
+      }
+      
+      // Log redirect source (⚡ = Redis hit, 💾 = DB fallback)
+      const cacheSource = url._source || 'Unknown';
+      const sourceEmoji = cacheSource === 'Redis' ? '⚡' : '💾';
+      console.log(`🔗 ${shortCode} -> ${sourceEmoji} ${cacheSource} | ${url.originalUrl}`);
+      
+      // Record the click asynchronously
+      urlService.recordClick(shortCode, {
+        userAgent: req.headers['user-agent'],
+        referrer: req.headers.referer || req.headers.referrer,
+        ip: req.ip,
+      }).catch(console.error);
+      
+      res.redirect(301, url.originalUrl);
+    } catch (error) {
+      // Any error in URL lookup - show 404 page
+      if (error instanceof AppError && (error.statusCode === 404 || error.statusCode === 410)) {
+        console.log(`❌ Error (${error.statusCode}): ${error.message} -> Redirecting to ${config.clientUrl}/notfound`);
+        return res.redirect(302, `${config.clientUrl}/notfound`);
+      }
+      // Other errors - pass to error handler
+      throw error;
     }
-    
-    // Check if expired
-    if (url.expiresAt && new Date() > url.expiresAt) {
-      throw AppError.gone('This short URL has expired');
-    }
-    
-    // Record the click asynchronously
-    urlService.recordClick(shortCode, {
-      userAgent: req.headers['user-agent'],
-      referrer: req.headers.referer || req.headers.referrer,
-      ip: req.ip,
-    }).catch(console.error);
-    
-    res.redirect(301, url.originalUrl);
   } catch (error) {
     next(error);
   }

@@ -2,7 +2,7 @@
  * Main App Component
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
@@ -10,33 +10,16 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 import config from './config';
 
-import { AuthProvider, UrlProvider, useAuth } from './context';
+import { AuthProvider, UrlProvider } from './context';
 import { Navbar, Footer } from './components/layout';
-import { LoadingSpinner } from './components/common';
 import { Home, Login, Register, Dashboard, NotFound, ForgotPassword } from './pages';
 import ProtectedRoute from './routes/ProtectedRoute';
 
 // App Layout with auth check
 const AppLayout = () => {
-  const { isLoading } = useAuth();
-
-  useEffect(() => {
-    // Handle auth logout event from API interceptor
-    const handleLogout = () => {
-      window.location.href = '/login';
-    };
-    
-    window.addEventListener('auth:logout', handleLogout);
-    return () => window.removeEventListener('auth:logout', handleLogout);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="min-vh-100 d-flex align-items-center justify-content-center">
-        <LoadingSpinner size="lg" text="Loading..." />
-      </div>
-    );
-  }
+  // Auth state managed by ProtectedRoute for redirects
+  // Don't show spinner on initial load - show Content while checking auth
+  // The ProtectedRoute will handle redirects if needed
 
   return (
     <div className="d-flex flex-column min-vh-100">
@@ -55,6 +38,7 @@ const AppLayout = () => {
               </ProtectedRoute>
             }
           />
+          <Route path="/notfound" element={<NotFound />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

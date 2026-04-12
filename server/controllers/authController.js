@@ -17,7 +17,7 @@ const setAccessTokenCookie = (res, token) => {
   res.cookie('accessToken', token, {
     httpOnly: true,
     secure: config.nodeEnv === 'production',
-    sameSite: 'strict',
+    sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax',
     maxAge: 15 * 60 * 1000, // 15 minutes
   });
 };
@@ -29,7 +29,7 @@ const setRefreshTokenCookie = (res, token) => {
   res.cookie('refreshToken', token, {
     httpOnly: true,
     secure: config.nodeEnv === 'production',
-    sameSite: 'strict',
+    sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 };
@@ -80,6 +80,8 @@ const register = async (req, res, next) => {
       data: {
         user: result.user,
         migratedUrls: result.migratedUrls,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
     });
   } catch (error) {
@@ -117,6 +119,8 @@ const login = async (req, res, next) => {
       data: {
         user: result.user,
         migratedUrls: result.migratedUrls,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
     });
   } catch (error) {
@@ -136,10 +140,14 @@ const googleLogin = async (req, res, next) => {
       throw AppError.badRequest('Google token is required');
     }
     
+    console.log('Google login attempt with token:', token.substring(0, 20) + '...');
+    
     const result = await googleAuthService.authenticateWithGoogle(token, guestId);
     
     setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
+    
+    console.log('Google login successful for user:', result.user.email);
     
     res.json({
       success: true,
@@ -147,9 +155,12 @@ const googleLogin = async (req, res, next) => {
         user: result.user,
         isNewUser: result.isNewUser,
         migratedUrls: result.migratedUrls,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
     });
   } catch (error) {
+    console.error('Google login error in controller:', error.message);
     next(error);
   }
 };
@@ -172,7 +183,10 @@ const refreshToken = async (req, res, next) => {
     
     res.json({
       success: true,
-      data: {},
+      data: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      },
     });
   } catch (error) {
     next(error);
@@ -185,26 +199,22 @@ const refreshToken = async (req, res, next) => {
  */
 const logout = async (req, res, next) => {
   try {
-    const token = req.cookies.refreshToken;
-    
-    if (token) {
-      // Verify token and extract userId
-      const { verifyRefreshToken } = require('../utils/jwt');
-      const decoded = verifyRefreshToken(token);
-      
-      // Validate that token user matches authenticated user
-      if (decoded && decoded.userId !== req.user._id.toString()) {
-        throw AppError.unauthorized('Token user does not match authenticated user');
-      }
-      
-      // Logout only if authenticated
-      if (decoded) {
-        await authService.logout(req.user._id);
-      }
+    // Always logout the authenticated user first to invalidate tokens in database
+    if (req.user && req.user._id) {
+      await authService.logout(req.user._id);
     }
     
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+    // Clear cookies with same options as when they were set
+    // Must match the options from setAccessTokenCookie and setRefreshTokenCookie
+    const cookieOptions = {
+      httpOnly: true,
+      secure: config.nodeEnv === 'production',
+      sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax',
+      path: '/', // Explicitly set path to match cookie setting
+    };
+    
+    res.clearCookie('accessToken', cookieOptions);
+    res.clearCookie('refreshToken', cookieOptions);
     
     res.json({
       success: true,

@@ -54,6 +54,8 @@ const Navbar = () => {
                   <button
                     className="btn btn-outline-light btn-sm ms-2"
                     onClick={handleLogout}
+                    aria-label="Logout from your account"
+                    title="Logout"
                   >
                     <FiLogOut className="me-1" />
                     Logout

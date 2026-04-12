@@ -10,19 +10,29 @@ const { errors } = require('../utils/AppError');
 /**
  * Require authentication
  * Attaches user to req.user and validates token integrity
+ * Supports both Bearer token and httpOnly cookie
  */
 const requireAuth = async (req, res, next) => {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Try Bearer token first
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    }
+    
+    // Fall back to httpOnly cookie
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
+    
+    if (!token) {
       throw errors.unauthorized('No token provided');
     }
     
-    const token = authHeader.split(' ')[1];
-    
     // Validate token format
-    if (!token || typeof token !== 'string' || token.length === 0) {
+    if (typeof token !== 'string' || token.length === 0) {
       throw errors.unauthorized('Invalid token format');
     }
     
@@ -48,22 +58,32 @@ const requireAuth = async (req, res, next) => {
 /**
  * Optional authentication
  * Attaches user if token is valid, continues if not
+ * Supports both Bearer token and httpOnly cookie
  */
 const optionalAuth = async (req, res, next) => {
   try {
+    let token = null;
     const authHeader = req.headers.authorization;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      req.user = null;
-      return next();
+    // Try Bearer token first
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
     }
     
-    const token = authHeader.split(' ')[1];
-    const decoded = verifyAccessToken(token);
+    // Fall back to httpOnly cookie
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
     
-    if (decoded) {
-      const user = await User.findById(decoded.userId).select('-password -refreshToken');
-      req.user = user;
+    if (token) {
+      const decoded = verifyAccessToken(token);
+      
+      if (decoded && decoded.userId) {
+        const user = await User.findById(decoded.userId).select('-password -refreshToken');
+        req.user = user;
+      } else {
+        req.user = null;
+      }
     } else {
       req.user = null;
     }

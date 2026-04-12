@@ -109,10 +109,6 @@ const Register = () => {
     if (fieldErrors[name]) {
       setFieldErrors(prev => ({ ...prev, [name]: '' }));
     }
-    
-    if (error) {
-      clearError();
-    }
   };
 
   // Handle OTP input
@@ -176,7 +172,8 @@ const Register = () => {
       setResendTimer(60);
       setSuccessMessage('OTP sent to your email. Please check your inbox.');
     } catch (err) {
-      setFormError(err.response?.data?.message || 'Failed to send OTP');
+      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to send OTP. Please try again.';
+      setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
@@ -220,7 +217,7 @@ const Register = () => {
       }
       
       // Check if URLs were migrated
-      const migratedUrls = response.data.data.migratedUrls || 0;
+      const migratedUrls = response.data.data?.migratedUrls || 0;
       if (migratedUrls > 0) {
         // Store migration message for dashboard to display
         sessionStorage.setItem('migrationMessage', 
@@ -228,10 +225,11 @@ const Register = () => {
         );
       }
       
-      // Navigate to dashboard
-      navigate('/dashboard');
+      // Navigate to dashboard - auth state will be restored by checkAuth
+      setTimeout(() => navigate('/dashboard'), 100);
     } catch (err) {
-      setFormError(err.response?.data?.message || 'Invalid OTP');
+      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Invalid OTP. Please try again.';
+      setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
@@ -249,7 +247,8 @@ const Register = () => {
       setResendTimer(60);
       setSuccessMessage('New OTP sent successfully!');
     } catch (err) {
-      setFormError(err.response?.data?.message || 'Failed to resend OTP');
+      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to resend OTP. Please try again.';
+      setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
@@ -259,21 +258,27 @@ const Register = () => {
     onSuccess: async (tokenResponse) => {
       try {
         setGoogleError('');
+        console.log('Google token received in Register, sending to backend...');
         // Send the access token to backend for verification
         const response = await authService.googleLogin(tokenResponse.access_token);
         
+        console.log('Google login response:', response);
+        
         if (response.success) {
           // Token stored as httpOnly cookie by server
-          
+          console.log('Google login successful in Register');
           // Navigate to dashboard
           navigate('/dashboard');
         }
       } catch (err) {
-        setGoogleError(err.response?.data?.error?.message || 'Google login failed. Please try again.');
+        const errorMsg = err.response?.data?.error?.message || err.message || 'Google login failed. Please try again.';
+        console.error('Google login error:', err);
+        setGoogleError(errorMsg);
       }
     },
     onError: (error) => {
-      setGoogleError('Google login failed. Please try again.');
+      console.error('Google OAuth error:', error);
+      setGoogleError(error?.error || 'Google login failed. Please try again.');
     },
   });
 
@@ -451,6 +456,7 @@ const Register = () => {
                       value={formData.email}
                       onChange={handleChange}
                       disabled={isSending}
+                      autoComplete="off"
                     />
                   </div>
                   {fieldErrors.email && (
@@ -474,6 +480,7 @@ const Register = () => {
                       value={formData.password}
                       onChange={handleChange}
                       disabled={isSending}
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"
@@ -481,6 +488,8 @@ const Register = () => {
                       onClick={() => setShowPassword(!showPassword)}
                       tabIndex={-1}
                       disabled={isSending}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <FiEyeOff /> : <FiEye />}
                     </button>
@@ -529,6 +538,7 @@ const Register = () => {
                       value={formData.confirmPassword}
                       onChange={handleChange}
                       disabled={isSending}
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"
@@ -536,6 +546,8 @@ const Register = () => {
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       tabIndex={-1}
                       disabled={isSending}
+                      aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      title={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                     >
                       {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
                     </button>
@@ -556,6 +568,7 @@ const Register = () => {
                   type="submit"
                   className="btn btn-primary w-100 py-2"
                   disabled={isLoading || isSending || !isPasswordValid}
+                  aria-label="Continue with registration"
                 >
                   {isSending ? (
                     <span className="spinner-border spinner-border-sm me-2" />
@@ -590,6 +603,7 @@ const Register = () => {
                   handleGoogleLogin();
                 }}
                 disabled={isLoading || isSending}
+                aria-label="Sign up with Google account"
               >
                 <FcGoogle className="me-2" size={20} />
                 Continue with Google
@@ -601,6 +615,7 @@ const Register = () => {
                 className="btn btn-outline-primary w-100 py-2"
                 onClick={handleGuestAccess}
                 disabled={isLoading || isSending}
+                aria-label="Continue as guest"
               >
                 <FiUser className="me-2" />
                 Try as Guest

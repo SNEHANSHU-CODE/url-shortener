@@ -6,6 +6,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { authService } from '../services';
+import { clearAuthTokens } from '../services/api';
 import { 
   getGuestIdentifier, 
   storeGuestId, 
@@ -28,7 +29,7 @@ const AUTH_ACTIONS = {
 // Initial state
 const initialState = {
   user: null,
-  guestId: localStorage.getItem('guestId') || null,
+  guestId: null,  // Will be loaded from storage in useEffect
   isAuthenticated: false,
   isLoading: true,
   error: null,
@@ -65,18 +66,44 @@ const authReducer = (state, action) => {
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check auth on mount
+  // Check auth and restore guest ID on mount
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
       try {
         const response = await authService.getCurrentUser();
-        dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
+        if (isMounted) {
+          dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
+        }
       } catch (error) {
-        dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
+        // User not authenticated, check for guest ID in storage
+        if (isMounted) {
+          const storedGuestId = localStorage.getItem('guestId');
+          if (storedGuestId) {
+            dispatch({ type: AUTH_ACTIONS.SET_GUEST, payload: storedGuestId });
+          }
+          dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
+        }
       }
     };
 
     checkAuth();
+
+    // Listen for forced logout from API interceptor
+    const handleForcedLogout = () => {
+      if (isMounted) {
+        // Clear guest data and log out
+        clearGuestId();
+        dispatch({ type: AUTH_ACTIONS.LOGOUT });
+      }
+    };
+
+    window.addEventListener('auth:logout', handleForcedLogout);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('auth:logout', handleForcedLogout);
+    };
   }, []);
 
   // Auth actions
@@ -84,15 +111,41 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
     try {
       const response = await authService.login(credentials);
-      // Access token is set as httpOnly cookie by server
+      // Server sets httpOnly cookie + returns token
+      // API interceptor will extract and store token from response
       
       // Clear guest data after successful login (URLs already migrated server-side)
       clearGuestId();
       
-      dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
-      return { success: true, migratedUrls: response.data.migratedUrls };
+      if (response.success && response.data?.user) {
+        dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
+        return { success: true, migratedUrls: response.data.migratedUrls || 0 };
+      } else {
+        throw new Error('Invalid response format');
+      }
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Login failed';
+      clearAuthTokens(); // Clear on error
+      const message = error.response?.data?.error?.message || error.message || 'Login failed. Please try again.';
+      dispatch({ type: AUTH_ACTIONS.SET_ERROR, payload: message });
+      return { success: false, error: message };
+    }
+  }, []);
+
+  const googleLogin = useCallback(async (token) => {
+    dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
+    try {
+      const response = await authService.googleLogin(token);
+      
+      if (response.success && response.data?.user) {
+        // Clear guest data after successful Google login
+        clearGuestId();
+        dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
+        return { success: true, isNewUser: response.data.isNewUser || false, migratedUrls: response.data.migratedUrls || 0 };
+      } else {
+        throw new Error('Invalid response from Google login');
+      }
+    } catch (error) {
+      const message = error.response?.data?.error?.message || error.message || 'Google login failed. Please try again.';
       dispatch({ type: AUTH_ACTIONS.SET_ERROR, payload: message });
       return { success: false, error: message };
     }
@@ -102,15 +155,19 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
     try {
       const response = await authService.register(data);
-      localStorage.setItem('accessToken', response.data.accessToken);
+      // Access token is set as httpOnly cookie by server
       
       // Clear guest data after successful registration (URLs already migrated server-side)
       clearGuestId();
       
-      dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
-      return { success: true, migratedUrls: response.data.migratedUrls };
+      if (response.success && response.data?.user) {
+        dispatch({ type: AUTH_ACTIONS.SET_USER, payload: response.data.user });
+        return { success: true, migratedUrls: response.data.migratedUrls || 0 };
+      } else {
+        throw new Error('Invalid response format');
+      }
     } catch (error) {
-      const message = error.response?.data?.error?.message || 'Registration failed';
+      const message = error.response?.data?.error?.message || error.message || 'Registration failed. Please try again.';
       dispatch({ type: AUTH_ACTIONS.SET_ERROR, payload: message });
       return { success: false, error: message };
     }
@@ -118,13 +175,19 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     try {
+      // Set logout flag to prevent auto-refresh during logout
+      localStorage.setItem('_logoutInProgress', 'true');
+      
       await authService.logout();
     } catch (error) {
       // Ignore logout errors
+    } finally {
+      // Clear tokens and cookies
+      clearAuthTokens();
+      clearGuestId();
+      localStorage.removeItem('_logoutInProgress');
+      dispatch({ type: AUTH_ACTIONS.LOGOUT });
     }
-    // Cookies cleared by server
-    // Don't clear guestId on logout - user may want to continue as guest
-    dispatch({ type: AUTH_ACTIONS.LOGOUT });
   }, []);
 
   /**
@@ -146,7 +209,6 @@ export const AuthProvider = ({ children }) => {
       
       const response = await authService.initGuest(fingerprint);
       const guestId = response.data.guestId;
-      const isRecovered = response.data.recovered;
       
       // Store guest ID for persistence
       storeGuestId(guestId);
@@ -166,6 +228,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     ...state,
     login,
+    googleLogin,
     register,
     logout,
     initGuest,

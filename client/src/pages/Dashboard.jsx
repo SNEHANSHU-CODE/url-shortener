@@ -44,9 +44,16 @@ const Dashboard = () => {
 
   // Initialize guest session if needed
   useEffect(() => {
-    if (!isAuthenticated && !guestId && !localStorage.getItem('guestId')) {
-      initGuest();
-    }
+    const initializeGuest = async () => {
+      // Don't init if already authenticated or already have guest ID
+      if (isAuthenticated || guestId || localStorage.getItem('guestId')) {
+        return;
+      }
+      // Only initialize guest if we don't have one
+      await initGuest();
+    };
+    
+    initializeGuest();
   }, [isAuthenticated, guestId, initGuest]);
 
   const loadUrls = useCallback(() => {
@@ -126,6 +133,9 @@ const Dashboard = () => {
     setShowForm(false);
     setCurrentPage(1);
     setSearchQuery('');
+    setSearchResults(null);
+    // Reload URLs to show the newly created one
+    loadUrls();
   };
 
   // Calculate stats

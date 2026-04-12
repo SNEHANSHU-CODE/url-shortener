@@ -8,7 +8,7 @@
 
 | Capability | Implementation |
 |---|---|
-| **Sub-100ms Latency** | caching via Redis hot-path store |
+| **Sub-100ms Latency** | caching via redis hot-path store |
 | **Enterprise Security** | JWT rotation, Google OAuth 2.0, Helmet-hardened HTTP headers |
 | **Abuse Prevention** | Tiered rate limiting against DDoS and brute-force attacks |
 | **Collision Resistance** | `crypto.randomBytes`-based short code generation with automatic retry |
@@ -81,5 +81,5 @@ Business logic is fully decoupled from controllers into a dedicated Services lay
 </div>
 
 
-Copyright (c) 2025 Your Name. All rights reserved.
+Copyright (c) 2026 Your Name. All rights reserved.
 This code may not be copied, modified, or distributed without explicit written permission.

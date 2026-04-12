@@ -27,13 +27,19 @@ class GoogleAuthService {
       const { email, name, picture, id: googleId } = response.data;
       
       if (!email || !googleId) {
-        throw errors.badRequest('Invalid Google token');
+        console.error('Google token missing email or googleId:', response.data);
+        throw errors.badRequest('Invalid Google token - missing email or ID');
       }
       
       return { email, name, picture, googleId };
     } catch (error) {
+      console.error('Google token verification error:', {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
       if (error.response) {
-        throw errors.unauthorized('Invalid Google token');
+        throw errors.unauthorized('Invalid Google token - verification failed');
       }
       throw error;
     }

@@ -101,6 +101,7 @@ const UrlForm = ({ onSuccess }) => {
                       className={`btn btn-sm ${copied ? 'btn-success' : 'btn-outline-success'}`}
                       onClick={handleCopyLink}
                       title="Copy to clipboard"
+                      aria-label="Copy short URL to clipboard"
                     >
                       {copied ? (
                         <>
