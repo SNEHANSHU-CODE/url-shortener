@@ -150,8 +150,8 @@ app.get('/api/cache-status', (req, res) => {
     data: {
       ...stats,
       message: stats.connected 
-        ? '✅ Redis.com cache is connected and working'
-        : '❌ Redis.com cache is not connected - check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env',
+        ? 'Redis.com cache is connected and working'
+        : 'Redis.com cache is not connected - check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env',
       hitRate: stats.hitRate,
     },
   });
@@ -222,15 +222,15 @@ const startServer = async () => {
     await connectDatabase();
     
     // Wait for cache to initialize
-    console.log('⏳ Initializing cache...');
+    console.log('Initializing cache...');
     await urlCache.waitForInitialization();
     
     // Hotload URLs from MongoDB to Redis cache on server startup
     if (urlCache.connected) {
-      console.log('🚀 Cache connected, starting hotload...');
+      console.log('Cache connected, starting hotload...');
       await hotloadUrlsToCache();
     } else {
-      console.log('⚠️  Skipping hotload: Redis cache not connected. Check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env');
+      console.log('Skipping hotload: Redis cache not connected. Check REDIS_HOST, REDIS_PORT, REDIS_PASSWORD in .env');
     }
     
     // Start URL cleanup scheduler (cleans expired guest URLs every hour)

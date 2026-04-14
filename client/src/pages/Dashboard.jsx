@@ -169,7 +169,7 @@ const Dashboard = () => {
 
       {/* Header */}
       <div className="row mb-4">
-        <div className="col-12">
+        <div className="col-12" style={{ minHeight: '64px' }}>
           <h2 className="fw-bold mb-1">
             Welcome{isGuest ? ', Guest' : ` back, ${user?.name || 'User'}`}!
           </h2>
@@ -192,7 +192,7 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="mb-0 fw-bold">{totalLinks}</h3>
-                <small className="opacity-75">Total Links</small>
+                <small>Total Links</small>
               </div>
             </div>
           </div>
@@ -205,7 +205,7 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="mb-0 fw-bold">{totalClicks}</h3>
-                <small className="opacity-75">Total Clicks</small>
+                <small>Total Clicks</small>
               </div>
             </div>
           </div>
@@ -269,10 +269,10 @@ const Dashboard = () => {
           <div className="col-12">
             <div className="card shadow-sm border-primary">
               <div className="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
-                <h5 className="mb-0 fw-medium">
+                <h3 className="mb-0 fw-medium h5">
                   <FiSearch className="me-2" />
                   Search Results ({searchResults.length} found)
-                </h5>
+                </h3>
                 <button 
                   className="btn btn-sm btn-light"
                   onClick={clearSearch}
@@ -298,7 +298,7 @@ const Dashboard = () => {
         <div className="col-12">
           <div className="card shadow-sm">
             <div className="card-header bg-white py-3">
-              <h5 className="mb-0 fw-medium">Your Links</h5>
+              <h3 className="mb-0 fw-medium h5">Your Links</h3>
             </div>
             <div className="card-body">
               <UrlList
@@ -359,15 +359,15 @@ const Dashboard = () => {
           <div className="col-12">
             <div className="card border-danger">
               <div className="card-header bg-danger text-white">
-                <h5 className="mb-0 fw-medium">
+                <h3 className="mb-0 fw-medium h5">
                   <FiTrash2 className="me-2" />
                   Danger Zone
-                </h5>
+                </h3>
               </div>
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
-                    <h6 className="mb-1">Delete Account</h6>
+                    <h4 className="mb-1 h6">Delete Account</h4>
                     <p className="text-muted mb-0 small">
                       Permanently delete your account and all associated links. This action cannot be undone.
                     </p>
@@ -375,6 +375,7 @@ const Dashboard = () => {
                   <button
                     className="btn btn-outline-danger"
                     onClick={() => setShowDeleteAccountModal(true)}
+                    aria-label="Delete your account permanently"
                   >
                     <FiTrash2 className="me-sm-1" />
                     <span className="d-none d-sm-inline">Delete Account</span>

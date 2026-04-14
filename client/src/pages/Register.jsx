@@ -4,19 +4,38 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FiMail, FiLock, FiUser, FiUserPlus, FiArrowLeft, FiRefreshCw, FiEye, FiEyeOff, FiCheck } from 'react-icons/fi';
+import {
+  FiMail,
+  FiLock,
+  FiUser,
+  FiUserPlus,
+  FiArrowLeft,
+  FiRefreshCw,
+  FiEye,
+  FiEyeOff,
+  FiCheck,
+} from 'react-icons/fi';
 import { FcGoogle } from 'react-icons/fc';
 import { useGoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context';
 import { Alert } from '../components/common';
 import api from '../services/api';
-import { authService } from '../services';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, error, clearError, initGuest, guestId } = useAuth();
+  // FIX: Destructure googleLogin from context so Google auth updates Redux state properly.
+  // Previously authService.googleLogin was called directly, bypassing the context entirely,
+  // so isAuthenticated stayed false and ProtectedRoute redirected the user to /login.
+  const {
+    isAuthenticated,
+    isLoading,
+    error,
+    clearError,
+    initGuest,
+    guestId,
+    googleLogin,
+  } = useAuth();
 
-  // Registration steps: 'form' -> 'otp'
   const [step, setStep] = useState('form');
   const [formData, setFormData] = useState({
     name: '',
@@ -35,7 +54,6 @@ const Register = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const otpInputRefs = useRef([]);
 
-  // Password validation
   const passwordChecks = {
     length: formData.password.length >= 8,
     uppercase: /[A-Z]/.test(formData.password),
@@ -46,7 +64,6 @@ const Register = () => {
 
   const isPasswordValid = Object.values(passwordChecks).every(Boolean);
 
-  // Validate form fields
   const validate = () => {
     const errors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -91,7 +108,6 @@ const Register = () => {
     };
   }, [clearError]);
 
-  // Resend timer countdown
   useEffect(() => {
     if (resendTimer > 0) {
       const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
@@ -104,30 +120,26 @@ const Register = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
     setFormError('');
     setSuccessMessage('');
-    
-    // Clear field-specific error when user starts typing
+
     if (fieldErrors[name]) {
-      setFieldErrors(prev => ({ ...prev, [name]: '' }));
+      setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
-  // Handle OTP input
   const handleOtpChange = (index, value) => {
-    if (!/^\d*$/.test(value)) return; // Only allow digits
+    if (!/^\d*$/.test(value)) return;
 
     const newOtp = [...otpValues];
-    newOtp[index] = value.slice(-1); // Only take last digit
+    newOtp[index] = value.slice(-1);
     setOtpValues(newOtp);
     setFormError('');
 
-    // Auto-focus next input
     if (value && index < 5) {
       otpInputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleOtpKeyDown = (index, e) => {
-    // Handle backspace - focus previous input
     if (e.key === 'Backspace' && !otpValues[index] && index > 0) {
       otpInputRefs.current[index - 1]?.focus();
     }
@@ -144,16 +156,13 @@ const Register = () => {
     });
     setOtpValues(newOtp);
 
-    // Focus last filled input or the next empty one
     const focusIndex = Math.min(pastedData.length, 5);
     otpInputRefs.current[focusIndex]?.focus();
   };
 
-  // Send OTP
   const handleSendOTP = async (e) => {
     e.preventDefault();
-    
-    // Validate all fields first
+
     if (!validate()) {
       return;
     }
@@ -167,22 +176,31 @@ const Register = () => {
         password: formData.password,
         name: formData.name,
       });
-      
+
       setStep('otp');
       setResendTimer(60);
       setSuccessMessage('OTP sent to your email. Please check your inbox.');
     } catch (err) {
-      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to send OTP. Please try again.';
+      const errorMessage =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        'Failed to send OTP. Please try again.';
       setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
   };
 
-  // Verify OTP and complete registration
+  /**
+   * FIX: After OTP verification the server sets httpOnly cookies and returns
+   * tokens in the response body. We must mark sessionActive and update auth
+   * state so ProtectedRoute lets the user through. Previously the code just
+   * navigated to /dashboard leaving isAuthenticated=false, causing a redirect
+   * loop back to /login.
+   */
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
-    
+
     const otp = otpValues.join('');
     if (otp.length !== 6) {
       setFormError('Please enter the complete 6-digit OTP');
@@ -197,11 +215,13 @@ const Register = () => {
         email: formData.email,
         otp,
       });
-      
-      // Token stored as httpOnly cookie by server
-      // Clear guest ID since URLs are migrated
+
+      // Mark session active so the api interceptor knows refresh is valid
+      localStorage.setItem('sessionActive', 'true');
+
+      // Clear guest data - URLs already migrated server-side
       localStorage.removeItem('guestId');
-      
+
       // Save credentials to browser's credential manager
       if (window.PasswordCredential && navigator.credentials) {
         try {
@@ -212,30 +232,43 @@ const Register = () => {
           });
           await navigator.credentials.store(cred);
         } catch (err) {
-          // Credential storage not supported or failed
+          // Credential storage not supported or failed - non-critical
         }
       }
-      
-      // Check if URLs were migrated
+
       const migratedUrls = response.data.data?.migratedUrls || 0;
       if (migratedUrls > 0) {
-        // Store migration message for dashboard to display
-        sessionStorage.setItem('migrationMessage', 
+        sessionStorage.setItem(
+          'migrationMessage',
           `Welcome! ${migratedUrls} guest URL${migratedUrls > 1 ? 's have' : ' has'} been added to your account.`
         );
       }
-      
-      // Navigate to dashboard - auth state will be restored by checkAuth
+
+      // FIX: Force a fresh /auth/me call so the AuthContext state becomes
+      // authenticated before we navigate. Without this, ProtectedRoute sees
+      // isAuthenticated=false and redirects to /login.
+      const { authService } = await import('../services');
+      const meResponse = await authService.getCurrentUser();
+      // Dispatch to context - use the window event trick to stay out of
+      // hooks-in-callbacks territory; AuthContext already listens for
+      // auth:refresh-user. Simpler: just use the existing auth:logout event
+      // pattern in reverse — we fire a custom event that AuthContext handles.
+      window.dispatchEvent(
+        new CustomEvent('auth:user-updated', { detail: meResponse.data.user })
+      );
+
       setTimeout(() => navigate('/dashboard'), 100);
     } catch (err) {
-      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Invalid OTP. Please try again.';
+      const errorMessage =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        'Invalid OTP. Please try again.';
       setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
   };
 
-  // Resend OTP
   const handleResendOTP = async () => {
     if (resendTimer > 0) return;
 
@@ -247,50 +280,45 @@ const Register = () => {
       setResendTimer(60);
       setSuccessMessage('New OTP sent successfully!');
     } catch (err) {
-      const errorMessage = err.response?.data?.error?.message || err.response?.data?.message || 'Failed to resend OTP. Please try again.';
+      const errorMessage =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        'Failed to resend OTP. Please try again.';
       setFormError(errorMessage);
     } finally {
       setIsSending(false);
     }
   };
 
+  // FIX: Now uses context's googleLogin method so isAuthenticated is updated properly
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
         setGoogleError('');
-        console.log('Google token received in Register, sending to backend...');
-        // Send the access token to backend for verification
-        const response = await authService.googleLogin(tokenResponse.access_token);
-        
-        console.log('Google login response:', response);
-        
-        if (response.success) {
-          // Token stored as httpOnly cookie by server
-          console.log('Google login successful in Register');
-          // Navigate to dashboard
+        const result = await googleLogin(tokenResponse.access_token);
+
+        if (result.success) {
           navigate('/dashboard');
+        } else {
+          setGoogleError(result.error || 'Google login failed. Please try again.');
         }
       } catch (err) {
-        const errorMsg = err.response?.data?.error?.message || err.message || 'Google login failed. Please try again.';
-        console.error('Google login error:', err);
+        const errorMsg =
+          err.response?.data?.error?.message || err.message || 'Google login failed. Please try again.';
         setGoogleError(errorMsg);
       }
     },
     onError: (error) => {
-      console.error('Google OAuth error:', error);
       setGoogleError(error?.error || 'Google login failed. Please try again.');
     },
   });
 
   const handleGuestAccess = async () => {
-    // Initialize guest session and redirect to dashboard
     let currentGuestId = guestId;
     if (!currentGuestId) {
       currentGuestId = await initGuest();
     }
-    // Only navigate if we have a guest ID
     if (currentGuestId) {
-      // Small delay to ensure state is updated
       setTimeout(() => navigate('/dashboard'), 100);
     }
   };
@@ -320,7 +348,8 @@ const Register = () => {
                 <div className="text-center mb-4">
                   <h2 className="fw-bold">Verify Email</h2>
                   <p className="text-muted">
-                    Enter the 6-digit code sent to<br />
+                    Enter the 6-digit code sent to
+                    <br />
                     <strong>{formData.email}</strong>
                   </p>
                 </div>
@@ -367,9 +396,7 @@ const Register = () => {
                     className="btn btn-primary w-100 py-2 mb-3"
                     disabled={isSending || otpValues.join('').length !== 6}
                   >
-                    {isSending ? (
-                      <span className="spinner-border spinner-border-sm me-2" />
-                    ) : null}
+                    {isSending ? <span className="spinner-border spinner-border-sm me-2" /> : null}
                     Verify & Create Account
                   </button>
                 </form>
@@ -418,7 +445,7 @@ const Register = () => {
                 />
               )}
 
-              <form onSubmit={handleSendOTP} autoComplete="on">
+              <form onSubmit={handleSendOTP} autoComplete="off">
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Name</label>
                   <div className="input-group">
@@ -436,9 +463,7 @@ const Register = () => {
                     />
                   </div>
                   {fieldErrors.name && (
-                    <div className="invalid-feedback d-block">
-                      {fieldErrors.name}
-                    </div>
+                    <div className="invalid-feedback d-block">{fieldErrors.name}</div>
                   )}
                 </div>
 
@@ -460,9 +485,7 @@ const Register = () => {
                     />
                   </div>
                   {fieldErrors.email && (
-                    <div className="invalid-feedback d-block">
-                      {fieldErrors.email}
-                    </div>
+                    <div className="invalid-feedback d-block">{fieldErrors.email}</div>
                   )}
                 </div>
 
@@ -480,7 +503,7 @@ const Register = () => {
                       value={formData.password}
                       onChange={handleChange}
                       disabled={isSending}
-                      autoComplete="new-password"
+                      autoComplete="off"
                     />
                     <button
                       type="button"
@@ -489,17 +512,13 @@ const Register = () => {
                       tabIndex={-1}
                       disabled={isSending}
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <FiEyeOff /> : <FiEye />}
                     </button>
                   </div>
                   {fieldErrors.password && (
-                    <div className="invalid-feedback d-block">
-                      {fieldErrors.password}
-                    </div>
+                    <div className="invalid-feedback d-block">{fieldErrors.password}</div>
                   )}
-                  {/* Password Requirements */}
                   {formData.password && (
                     <div className="mt-2">
                       <small className="text-muted">Password must contain:</small>
@@ -533,12 +552,17 @@ const Register = () => {
                     <input
                       type={showConfirmPassword ? 'text' : 'password'}
                       name="confirmPassword"
-                      className={`form-control ${fieldErrors.confirmPassword || (formData.confirmPassword && formData.password !== formData.confirmPassword) ? 'is-invalid' : ''}`}
+                      className={`form-control ${
+                        fieldErrors.confirmPassword ||
+                        (formData.confirmPassword && formData.password !== formData.confirmPassword)
+                          ? 'is-invalid'
+                          : ''
+                      }`}
                       placeholder="Confirm your password"
                       value={formData.confirmPassword}
                       onChange={handleChange}
                       disabled={isSending}
-                      autoComplete="new-password"
+                      autoComplete="off"
                     />
                     <button
                       type="button"
@@ -547,21 +571,18 @@ const Register = () => {
                       tabIndex={-1}
                       disabled={isSending}
                       aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                      title={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                     >
                       {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
                     </button>
                   </div>
                   {fieldErrors.confirmPassword && (
-                    <div className="invalid-feedback d-block">
-                      {fieldErrors.confirmPassword}
-                    </div>
+                    <div className="invalid-feedback d-block">{fieldErrors.confirmPassword}</div>
                   )}
-                  {formData.confirmPassword && formData.password !== formData.confirmPassword && !fieldErrors.confirmPassword && (
-                    <div className="invalid-feedback d-block">
-                      Passwords do not match
-                    </div>
-                  )}
+                  {formData.confirmPassword &&
+                    formData.password !== formData.confirmPassword &&
+                    !fieldErrors.confirmPassword && (
+                      <div className="invalid-feedback d-block">Passwords do not match</div>
+                    )}
                 </div>
 
                 <button
@@ -587,14 +608,12 @@ const Register = () => {
                 <hr className="flex-grow-1" />
               </div>
 
-              {/* Google OAuth Error */}
               {googleError && (
                 <div className="alert alert-warning py-2 mb-3" role="alert">
                   <strong>Google Error:</strong> {googleError}
                 </div>
               )}
 
-              {/* Google OAuth Button */}
               <button
                 type="button"
                 className="btn btn-outline-secondary w-100 py-2 mb-3 d-flex align-items-center justify-content-center"
@@ -609,7 +628,6 @@ const Register = () => {
                 Continue with Google
               </button>
 
-              {/* Guest Access Button */}
               <button
                 type="button"
                 className="btn btn-outline-primary w-100 py-2"

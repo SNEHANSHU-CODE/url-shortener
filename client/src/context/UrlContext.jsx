@@ -90,13 +90,16 @@ export const UrlProvider = ({ children }) => {
   const createUrl = useCallback(async (data) => {
     dispatch({ type: URL_ACTIONS.SET_CREATING, payload: true });
     dispatch({ type: URL_ACTIONS.CLEAR_ERROR });
-    
+
     try {
       const response = await urlService.createUrl(data);
       dispatch({ type: URL_ACTIONS.ADD_URL, payload: response.data.url });
       return { success: true, url: response.data.url };
     } catch (error) {
-      const message = error.response?.data?.error?.message || error.message || 'Failed to create URL. Please try again.';
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        'Failed to create URL. Please try again.';
       dispatch({ type: URL_ACTIONS.SET_ERROR, payload: message });
       return { success: false, error: message };
     }
@@ -104,7 +107,7 @@ export const UrlProvider = ({ children }) => {
 
   const fetchUserUrls = useCallback(async (params = {}) => {
     dispatch({ type: URL_ACTIONS.SET_LOADING, payload: true });
-    
+
     try {
       const response = await urlService.getUserUrls(params);
       dispatch({
@@ -115,14 +118,17 @@ export const UrlProvider = ({ children }) => {
         },
       });
     } catch (error) {
-      const message = error.response?.data?.error?.message || error.message || 'Failed to fetch URLs. Please try again.';
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        'Failed to fetch URLs. Please try again.';
       dispatch({ type: URL_ACTIONS.SET_ERROR, payload: message });
     }
   }, []);
 
   const fetchGuestUrls = useCallback(async () => {
     dispatch({ type: URL_ACTIONS.SET_LOADING, payload: true });
-    
+
     try {
       const response = await urlService.getGuestUrls();
       dispatch({
@@ -133,7 +139,7 @@ export const UrlProvider = ({ children }) => {
         },
       });
     } catch (error) {
-      // Guest URLs might not exist, that's OK
+      // Guest URLs might not exist yet - not a hard error
       dispatch({ type: URL_ACTIONS.SET_LOADING, payload: false });
     }
   }, []);
@@ -141,31 +147,51 @@ export const UrlProvider = ({ children }) => {
   const updateUrl = useCallback(async (shortCode, data) => {
     try {
       const response = await urlService.updateUrl(shortCode, data);
-      dispatch({ type: URL_ACTIONS.UPDATE_URL, payload: response.data?.url || response.data });
+      // FIX: Normalize response shape - server returns response.data.url
+      const updatedUrl = response.data?.url || response.data;
+      dispatch({ type: URL_ACTIONS.UPDATE_URL, payload: updatedUrl });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.error?.message || error.message || 'Failed to update URL. Please try again.';
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        'Failed to update URL. Please try again.';
       return { success: false, error: message };
     }
   }, []);
 
+  /**
+   * FIX: The old implementation always tried the authenticated endpoint first,
+   * which triggered a 401 → token refresh cycle for every guest delete.
+   * For guests, the refresh always fails, resulting in a forced logout event.
+   * Now we check localStorage to determine which endpoint to use upfront.
+   */
   const deleteUrl = useCallback(async (shortCode) => {
     try {
-      // Try authenticated endpoint first
-      try {
-        await urlService.deleteUrl(shortCode);
-      } catch (err) {
-        // If authenticated request fails (401 or 403), try guest endpoint
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          await urlService.deleteGuestUrl(shortCode);
-        } else {
-          throw err;
+      const isGuest = !localStorage.getItem('sessionActive') && localStorage.getItem('guestId');
+
+      if (isGuest) {
+        await urlService.deleteGuestUrl(shortCode);
+      } else {
+        try {
+          await urlService.deleteUrl(shortCode);
+        } catch (err) {
+          // Fallback to guest endpoint only on explicit auth errors
+          if (err.response?.status === 401 || err.response?.status === 403) {
+            await urlService.deleteGuestUrl(shortCode);
+          } else {
+            throw err;
+          }
         }
       }
+
       dispatch({ type: URL_ACTIONS.DELETE_URL, payload: shortCode });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.error?.message || error.message || 'Failed to delete URL. Please try again.';
+      const message =
+        error.response?.data?.error?.message ||
+        error.message ||
+        'Failed to delete URL. Please try again.';
       return { success: false, error: message };
     }
   }, []);

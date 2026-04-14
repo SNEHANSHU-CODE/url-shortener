@@ -41,20 +41,17 @@ const register = async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
     const guestId = req.headers['x-guest-id'];
-    
-    // Validate inputs
+
     if (!email || !password || !name) {
       throw AppError.badRequest('Email, password, and name are required');
     }
-    
-    // Normalize and validate email
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
-    
-    // Validate password strength (min 8 chars, at least 1 uppercase, 1 number)
+
     if (password.length < 8) {
       throw AppError.badRequest('Password must be at least 8 characters');
     }
@@ -64,17 +61,16 @@ const register = async (req, res, next) => {
     if (!/[0-9]/.test(password)) {
       throw AppError.badRequest('Password must contain at least one number');
     }
-    
-    // Validate name (2-50 characters)
+
     if (name.length < 2 || name.length > 50) {
       throw AppError.badRequest('Name must be between 2 and 50 characters');
     }
-    
+
     const result = await authService.register({ email: normalizedEmail, password, name }, guestId);
-    
+
     setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
-    
+
     res.status(201).json({
       success: true,
       data: {
@@ -96,24 +92,22 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     const guestId = req.headers['x-guest-id'];
-    
-    // Validate inputs
+
     if (!email || !password) {
       throw AppError.badRequest('Email and password are required');
     }
-    
-    // Validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
-    
+
     const result = await authService.login({ email: normalizedEmail, password }, guestId);
-    
+
     setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
-    
+
     res.json({
       success: true,
       data: {
@@ -135,20 +129,20 @@ const googleLogin = async (req, res, next) => {
   try {
     const { token } = req.body;
     const guestId = req.headers['x-guest-id'];
-    
+
     if (!token) {
       throw AppError.badRequest('Google token is required');
     }
-    
+
     console.log('Google login attempt with token:', token.substring(0, 20) + '...');
-    
+
     const result = await googleAuthService.authenticateWithGoogle(token, guestId);
-    
+
     setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
-    
+
     console.log('Google login successful for user:', result.user.email);
-    
+
     res.json({
       success: true,
       data: {
@@ -171,16 +165,16 @@ const googleLogin = async (req, res, next) => {
 const refreshToken = async (req, res, next) => {
   try {
     const token = req.cookies.refreshToken;
-    
+
     if (!token) {
       throw AppError.unauthorized('No refresh token provided');
     }
-    
+
     const result = await authService.refreshToken(token);
-    
+
     setAccessTokenCookie(res, result.accessToken);
     setRefreshTokenCookie(res, result.refreshToken);
-    
+
     res.json({
       success: true,
       data: {
@@ -195,27 +189,23 @@ const refreshToken = async (req, res, next) => {
 
 /**
  * Logout user
- * Validates that the user making the request matches the token user
  */
 const logout = async (req, res, next) => {
   try {
-    // Always logout the authenticated user first to invalidate tokens in database
     if (req.user && req.user._id) {
       await authService.logout(req.user._id);
     }
-    
-    // Clear cookies with same options as when they were set
-    // Must match the options from setAccessTokenCookie and setRefreshTokenCookie
+
     const cookieOptions = {
       httpOnly: true,
       secure: config.nodeEnv === 'production',
       sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax',
-      path: '/', // Explicitly set path to match cookie setting
+      path: '/',
     };
-    
+
     res.clearCookie('accessToken', cookieOptions);
     res.clearCookie('refreshToken', cookieOptions);
-    
+
     res.json({
       success: true,
       message: 'Logged out successfully',
@@ -247,21 +237,19 @@ const getCurrentUser = async (req, res, next) => {
 const requestPasswordReset = async (req, res, next) => {
   try {
     const { email } = req.body;
-    
+
     if (!email) {
       throw AppError.badRequest('Email is required');
     }
-    
-    // Normalize and validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
-    
+
     await authService.requestPasswordReset(normalizedEmail);
-    
-    // Always return success to prevent email enumeration
+
     res.json({
       success: true,
       message: 'If an account exists, a password reset email has been sent',
@@ -277,9 +265,9 @@ const requestPasswordReset = async (req, res, next) => {
 const resetPassword = async (req, res, next) => {
   try {
     const { token, newPassword } = req.body;
-    
+
     await authService.resetPassword(token, newPassword);
-    
+
     res.json({
       success: true,
       message: 'Password reset successfully',
@@ -291,57 +279,48 @@ const resetPassword = async (req, res, next) => {
 
 /**
  * Initialize guest session
- * Enterprise-standard guest identification:
- * 1. Check existing guestId from header
- * 2. Check browser fingerprint for returning visitors
- * 3. Create new guest if no match
  */
 const initGuest = async (req, res, next) => {
   try {
     const existingGuestId = req.headers['x-guest-id'];
     const fingerprint = req.headers['x-guest-fingerprint'];
-    
-    // Get IP address and user agent from request
+
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || 'unknown';
     const userAgent = req.headers['user-agent'] || null;
-    
-    // Validate existing guest first
+
     if (existingGuestId) {
       const isValid = await guestService.validateGuest(existingGuestId);
       if (isValid) {
-        // Update fingerprint if provided and not set
         if (fingerprint && !isValid.fingerprint) {
           isValid.fingerprint = fingerprint;
           await isValid.save();
         }
         return res.json({
           success: true,
-          data: { 
+          data: {
             guestId: existingGuestId,
-            isReturning: true 
+            isReturning: true,
           },
         });
       }
     }
-    
-    // Try to find by fingerprint (returning visitor who cleared localStorage)
+
     if (fingerprint) {
       const existingByFingerprint = await guestService.findByFingerprint(fingerprint);
       if (existingByFingerprint) {
         return res.json({
           success: true,
-          data: { 
+          data: {
             guestId: existingByFingerprint.guestId,
             isReturning: true,
-            recovered: true // Indicates we recovered guest from fingerprint
+            recovered: true,
           },
         });
       }
     }
-    
-    // Create new guest with fingerprint
+
     const guest = await guestService.getOrCreateGuest(null, ipAddress, userAgent, fingerprint);
-    
+
     res.json({
       success: true,
       data: { guestId: guest.guestId },
@@ -358,19 +337,16 @@ const sendRegistrationOTP = async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
 
-    // Validate inputs
     if (!email || !password || !name) {
       throw AppError.badRequest('Email, password, and name are required');
     }
-    
-    // Normalize and validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
-    
-    // Validate password strength
+
     if (password.length < 8) {
       throw AppError.badRequest('Password must be at least 8 characters');
     }
@@ -380,20 +356,24 @@ const sendRegistrationOTP = async (req, res, next) => {
     if (!/[0-9]/.test(password)) {
       throw AppError.badRequest('Password must contain at least one number');
     }
-    
-    // Validate name
+
     if (name.length < 2 || name.length > 50) {
       throw AppError.badRequest('Name must be between 2 and 50 characters');
     }
 
-    // Check if email already exists
     const existingUser = await authService.findUserByEmail(normalizedEmail);
     if (existingUser) {
       throw AppError.conflict('Email already registered');
     }
 
-    // Send OTP
-    await otpService.requestRegistrationOTP(normalizedEmail, { email: normalizedEmail, password, name });
+    // Clear any stale OTP from a previous attempt (rate-limit hit, page refresh, etc.)
+    otpService.clearOTP(normalizedEmail);
+
+    await otpService.requestRegistrationOTP(normalizedEmail, {
+      email: normalizedEmail,
+      password,
+      name,
+    });
 
     res.json({
       success: true,
@@ -416,13 +396,42 @@ const verifyOTPAndRegister = async (req, res, next) => {
       throw AppError.badRequest('Email and OTP are required');
     }
 
-    // Verify OTP
-    const verification = otpService.verifyOTP(email, otp);
+    // Always normalize email consistently — OTP was stored with lowercased key
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Verify OTP first (this consumes it, preventing replay attacks)
+    const verification = otpService.verifyOTP(normalizedEmail, otp);
     if (!verification.valid) {
       throw AppError.badRequest(verification.error);
     }
 
-    // Complete registration with stored user data
+    // FIX: Check for duplicate email AFTER OTP is verified but BEFORE creating user.
+    // If the user already exists at this point it means:
+    //   - They double-submitted (clicked the button twice quickly), OR
+    //   - A concurrent request already created the account successfully.
+    // In both cases the correct response is to treat it as a successful login
+    // by returning the existing user's session, NOT throwing an error.
+    const alreadyExists = await authService.findUserByEmail(normalizedEmail);
+    if (alreadyExists) {
+      // The account was just created (race/double-submit) — log them in instead
+      const tokens = require('../utils/jwt').generateTokenPair(alreadyExists._id);
+      alreadyExists.refreshToken = tokens.refreshToken;
+      await alreadyExists.save();
+
+      setAccessTokenCookie(res, tokens.accessToken);
+      setRefreshTokenCookie(res, tokens.refreshToken);
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          user: alreadyExists,
+          migratedUrls: 0,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
+      });
+    }
+
     const { email: userEmail, password, name } = verification.userData;
     const result = await authService.register({ email: userEmail, password, name }, guestId);
 
@@ -434,6 +443,8 @@ const verifyOTPAndRegister = async (req, res, next) => {
       data: {
         user: result.user,
         migratedUrls: result.migratedUrls,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       },
     });
   } catch (error) {
@@ -451,8 +462,7 @@ const resendOTP = async (req, res, next) => {
     if (!email) {
       throw AppError.badRequest('Email is required');
     }
-    
-    // Normalize and validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
@@ -480,25 +490,21 @@ const sendForgotPasswordOTP = async (req, res, next) => {
     if (!email) {
       throw AppError.badRequest('Email is required');
     }
-    
-    // Normalize and validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
 
-    // Check if user exists
     const existingUser = await authService.findUserByEmail(normalizedEmail);
     if (!existingUser) {
-      // Return success anyway to prevent email enumeration
       return res.json({
         success: true,
         message: 'If an account exists, an OTP has been sent.',
       });
     }
 
-    // Send OTP for password reset
     await otpService.requestPasswordResetOTP(normalizedEmail);
 
     res.json({
@@ -520,15 +526,13 @@ const verifyForgotPasswordOTP = async (req, res, next) => {
     if (!email || !otp) {
       throw AppError.badRequest('Email and OTP are required');
     }
-    
-    // Normalize and validate email format
+
     const validator = require('validator');
     const normalizedEmail = email.toLowerCase().trim();
     if (!validator.isEmail(normalizedEmail)) {
       throw AppError.badRequest('Invalid email format');
     }
 
-    // Verify OTP (don't clear it yet, just validate)
     const verification = await otpService.verifyPasswordResetOTP(normalizedEmail, otp, false);
     if (!verification.valid) {
       throw AppError.badRequest(verification.error || 'Invalid or expired OTP');
@@ -545,6 +549,7 @@ const verifyForgotPasswordOTP = async (req, res, next) => {
 
 /**
  * Reset password with OTP
+ * FIX: Was using undefined `normalizedEmail` variable; now correctly defined.
  */
 const resetPasswordWithOTP = async (req, res, next) => {
   try {
@@ -554,8 +559,15 @@ const resetPasswordWithOTP = async (req, res, next) => {
       throw AppError.badRequest('Email, OTP, and new password are required');
     }
 
+    // FIX: normalizedEmail was missing — caused ReferenceError crash
+    const validator = require('validator');
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!validator.isEmail(normalizedEmail)) {
+      throw AppError.badRequest('Invalid email format');
+    }
+
     // Verify OTP and clear it
-    const verification = otpService.verifyPasswordResetOTP(email, otp, true);
+    const verification = otpService.verifyPasswordResetOTP(normalizedEmail, otp, true);
     if (!verification.valid) {
       throw AppError.badRequest(verification.error || 'Invalid or expired OTP');
     }
@@ -589,7 +601,6 @@ const deleteAccount = async (req, res, next) => {
 
     const result = await authService.deleteAccount(req.user._id, password);
 
-    // Clear refresh token cookie
     res.clearCookie('refreshToken');
 
     res.json({
@@ -604,7 +615,6 @@ const deleteAccount = async (req, res, next) => {
 
 /**
  * Delete user account with Google verification
- * Google users don't need to type DELETE - Google verification is enough
  */
 const deleteAccountWithGoogle = async (req, res, next) => {
   try {
@@ -614,30 +624,22 @@ const deleteAccountWithGoogle = async (req, res, next) => {
       throw AppError.badRequest('Google token is required');
     }
 
-    // Verify Google token and get user info
-    const googleAuthService = require('../services/googleAuthService');
     const axios = require('axios');
-    
-    // Get user info from Google
-    const googleResponse = await axios.get(
-      'https://www.googleapis.com/oauth2/v2/userinfo',
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
-    
+
+    const googleResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
     const googleEmail = googleResponse.data.email;
-    
-    // Verify the Google email matches the logged-in user
+
     if (googleEmail !== req.user.email) {
       throw AppError.unauthorized('Google account does not match your account');
     }
 
     const result = await authService.deleteAccountByUserId(req.user._id);
 
-    // Clear refresh token cookie
     res.clearCookie('refreshToken');
 
     res.json({

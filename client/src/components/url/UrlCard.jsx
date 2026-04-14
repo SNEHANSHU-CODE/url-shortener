@@ -18,8 +18,12 @@ import { ConfirmModal } from '../common';
 
 const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () => {} }) => {
   const { isAuthenticated } = useAuth();
-  const { deleteUrl } = useUrls();
-  
+  // FIX: Destructure updateUrl from context so edits update the UI state.
+  // Previously handleEdit called urlService.updateUrl directly, which made
+  // the API call but never updated the in-memory URL list, so the card
+  // showed stale data until a full page reload.
+  const { deleteUrl, updateUrl } = useUrls();
+
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({
@@ -47,20 +51,26 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
     setShowDeleteModal(false);
   };
 
+  // FIX: Use context's updateUrl so the URL list re-renders with new values.
+  // The old implementation imported and called urlService directly,
+  // so the UrlContext state was never updated and the card kept showing old data.
   const handleEdit = async () => {
     setIsSaving(true);
     try {
-      const { urlService } = await import('../../services');
-      await urlService.updateUrl(url.shortCode, {
+      const result = await updateUrl(url.shortCode, {
         originalUrl: editData.originalUrl,
         expiresAt: editData.expiresAt || null,
       });
-      // Update state instead of reload
-      setIsEditing(false);
-      setEditData({ originalUrl: '', expiresAt: '' });
-      // Show success message via context if available
-      if (onSuccess) {
-        onSuccess('URL updated successfully');
+
+      if (result.success) {
+        setIsEditing(false);
+        if (onSuccess) {
+          onSuccess('URL updated successfully');
+        }
+      } else {
+        if (onError) {
+          onError(result.error || 'Failed to update URL');
+        }
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error?.message || 'Failed to update URL';
@@ -84,10 +94,12 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
     if (urlStr.length <= maxLength) return urlStr;
     return urlStr.substring(0, maxLength) + '...';
   };
-  
+
   const isExpired = url.expiresAt && new Date(url.expiresAt) < new Date();
-  const isExpiringSoon = url.expiresAt && !isExpired && 
-    (new Date(url.expiresAt) - new Date()) < 24 * 60 * 60 * 1000; // 24 hours
+  const isExpiringSoon =
+    url.expiresAt &&
+    !isExpired &&
+    new Date(url.expiresAt) - new Date() < 24 * 60 * 60 * 1000; // 24 hours
 
   return (
     <div className={`card mb-3 shadow-sm hover-shadow ${isExpired ? 'border-danger' : ''}`}>
@@ -155,14 +167,14 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
                   href={url.shortUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`fw-medium text-decoration-none ${isExpired ? 'text-danger' : 'text-primary'}`}
+                  className={`fw-medium text-decoration-none ${
+                    isExpired ? 'text-danger' : 'text-primary'
+                  }`}
                 >
                   {url.shortUrl.replace(/^https?:\/\//, '')}
                 </a>
                 <button
-                  className={`btn btn-sm ms-2 ${
-                    copied ? 'btn-success' : 'btn-outline-secondary'
-                  }`}
+                  className={`btn btn-sm ms-2 ${copied ? 'btn-success' : 'btn-outline-secondary'}`}
                   onClick={handleCopy}
                   title="Copy to clipboard"
                 >
@@ -170,7 +182,11 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
                 </button>
               </div>
               {url.expiresAt && (
-                <small className={`d-flex align-items-center mt-1 ${isExpired ? 'text-danger' : isExpiringSoon ? 'text-warning' : 'text-muted'}`}>
+                <small
+                  className={`d-flex align-items-center mt-1 ${
+                    isExpired ? 'text-danger' : isExpiringSoon ? 'text-warning' : 'text-muted'
+                  }`}
+                >
                   <FiClock size={12} className="me-1" />
                   {isExpired ? 'Expired' : `Expires ${formatDate(url.expiresAt)}`}
                 </small>
@@ -187,9 +203,7 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
                 title={url.originalUrl}
               >
                 <FiExternalLink className="me-1 flex-shrink-0" size={14} />
-                <span className="text-truncate">
-                  {truncateUrl(url.originalUrl)}
-                </span>
+                <span className="text-truncate">{truncateUrl(url.originalUrl)}</span>
               </a>
             </div>
 
@@ -225,9 +239,7 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
               )}
               {showActions && !isAuthenticated && (
                 <div className="d-flex align-items-center justify-content-end">
-                  <small className="text-muted me-2">
-                    {formatDate(url.createdAt)}
-                  </small>
+                  <small className="text-muted me-2">{formatDate(url.createdAt)}</small>
                   <button
                     className="btn btn-outline-danger btn-sm"
                     onClick={() => setShowDeleteModal(true)}
@@ -242,14 +254,14 @@ const UrlCard = ({ url, showActions = true, onSuccess = () => {}, onError = () =
           </div>
         )}
       </div>
-      
+
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDelete}
         title="Delete Link"
-        message={`Are you sure you want to delete this shortened URL? This action cannot be undone.`}
+        message="Are you sure you want to delete this shortened URL? This action cannot be undone."
         confirmText="Delete"
         cancelText="Cancel"
         variant="danger"

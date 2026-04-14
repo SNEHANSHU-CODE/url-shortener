@@ -14,13 +14,10 @@ class AuthService {
    * Register a new user
    */
   async register({ email, password, name }, guestId = null) {
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      throw errors.conflict('Email already registered');
-    }
-    
-    // Create user
+    // Create user — duplicate email is enforced by the MongoDB unique index
+    // on the email field and caught by the E11000 error handler in errorHandler.js.
+    // The controller (sendRegistrationOTP + verifyOTPAndRegister) guards against
+    // duplicates before reaching here; the DB index is the final safety net.
     const user = new User({ email, password, name });
     await user.save();
     

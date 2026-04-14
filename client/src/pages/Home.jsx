@@ -3,13 +3,27 @@
  * Landing page with URL shortener
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { FiZap, FiLock, FiBarChart2, FiClock } from 'react-icons/fi';
 import { UrlForm } from '../components/url';
 import { useAuth } from '../context';
 
 const Home = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, guestId, initGuest } = useAuth();
+
+  // Initialize guest session if not authenticated
+  useEffect(() => {
+    const initializeGuest = async () => {
+      // Don't init if already authenticated or already have guest ID
+      if (isAuthenticated || guestId || localStorage.getItem('guestId')) {
+        return;
+      }
+      // Only initialize guest if we don't have one
+      await initGuest();
+    };
+    
+    initializeGuest();
+  }, [isAuthenticated, guestId, initGuest]);
 
   const features = [
     {
@@ -44,7 +58,7 @@ const Home = () => {
               <h1 className="display-4 fw-bold mb-3">
                 Shorten Your Links, Amplify Your Reach
               </h1>
-              <p className="lead mb-4 opacity-75">
+              <p className="lead mb-4">
                 Create short, memorable links in seconds. Track clicks, analyze
                 performance, and grow your audience.
               </p>
@@ -79,7 +93,7 @@ const Home = () => {
                     <div className="rounded-circle bg-primary bg-opacity-10 d-inline-flex p-3 mb-3">
                       <feature.icon size={32} className="text-primary" />
                     </div>
-                    <h5 className="card-title">{feature.title}</h5>
+                    <h3 className="card-title h5">{feature.title}</h3>
                     <p className="card-text text-muted">{feature.description}</p>
                   </div>
                 </div>
@@ -94,7 +108,7 @@ const Home = () => {
         <section className="py-5 bg-dark text-white">
           <div className="container text-center">
             <h2 className="fw-bold mb-3">Ready to Get Started?</h2>
-            <p className="lead mb-4 opacity-75">
+            <p className="lead mb-4">
               Create an account to unlock all features and manage your links.
             </p>
             <a href="/register" className="btn btn-primary btn-lg px-5">

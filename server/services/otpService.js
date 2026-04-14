@@ -40,9 +40,10 @@ const sendOTPEmail = async (email, otp) => {
       service_id: config.emailjs.serviceId,
       template_id: config.emailjs.templateId,
       user_id: config.emailjs.publicKey,
+      accessToken: config.emailjs.privateKey,
       template_params: {
-        to_email: email,
-        otp_code: otp,
+        email: email,
+        passcode: otp,
         client_url: config.clientUrl,
       },
     };
@@ -70,6 +71,13 @@ const storeOTP = (email, otp, userData = null) => {
     expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
     attempts: 0,
   });
+};
+
+/**
+ * Clear OTP for email (used before issuing a fresh OTP)
+ */
+const clearOTP = (email) => {
+  otpStore.delete(email.toLowerCase());
 };
 
 /**
@@ -160,9 +168,10 @@ const sendPasswordResetOTPEmail = async (email, otp) => {
       service_id: config.emailjs.serviceId,
       template_id: config.emailjs.templateId,
       user_id: config.emailjs.publicKey,
+      accessToken: config.emailjs.privateKey,
       template_params: {
-        to_email: email,
-        otp_code: otp,
+        email: email,
+        passcode: otp,
         client_url: config.clientUrl,
         purpose: 'Password Reset',
       },
@@ -237,6 +246,7 @@ module.exports = {
   generateOTP,
   sendOTPEmail,
   storeOTP,
+  clearOTP,
   verifyOTP,
   requestRegistrationOTP,
   resendOTP,
